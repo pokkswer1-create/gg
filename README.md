@@ -2,6 +2,15 @@
 
 이 폴더(`d:\gg`)가 **Git 저장소 루트**입니다. Next.js 앱은 **`web`** 폴더 안에 있습니다.
 
+## 한 번에 GitHub에 올리기 (이 PC에서)
+
+1. **`Deploy-GitHub.bat`** 을 더블클릭합니다.  
+2. 브라우저가 열리면 **GitHub 로그인·승인**을 합니다 (자동화 불가 구간).  
+3. 저장소 이름을 물으면 Enter로 기본값(`gg-academy-web`) 또는 원하는 이름을 입력합니다.  
+4. 끝나면 Vercel에서 Import → **Root Directory = `web`** 만 지정하면 됩니다.
+
+(GitHub CLI가 없으면 `winget install GitHub.cli` 로 설치할 수 있습니다. 이미 설치해 둔 환경도 있습니다.)
+
 ## 폴더 여는 방법 (탐색기)
 
 - 파일 탐색기 주소창에 `d:\gg` 입력 후 Enter  
