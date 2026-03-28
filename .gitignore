@@ -1,0 +1,19 @@
+# Next.js (web/)
+web/node_modules/
+web/.next/
+web/out/
+web/.vercel/
+web/.env*
+web/npm-debug.log*
+web/yarn-error.log*
+web/*.tsbuildinfo
+web/next-env.d.ts
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+*.swp
+
+# Cursor (선택: 팀 저장소에 올릴 때만 제외)
+# .cursor/
