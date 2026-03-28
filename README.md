@@ -7,6 +7,20 @@
 - 파일 탐색기 주소창에 `d:\gg` 입력 후 Enter  
 - 또는 이 폴더의 **`open-folder.bat`** 을 더블클릭
 
+## Cursor / VS Code에서 Git 보기
+
+- 왼쪽 **소스 제어**(분기 아이콘)를 열면 변경 사항과 커밋을 볼 수 있습니다.  
+- 저장소 루트는 **`d:\gg`** 입니다 (앱 코드는 그 안의 **`web`**).
+
+## 커밋 이름·이메일 (이 PC에서만)
+
+첫 설정용으로 로컬 Git에 임시 값이 들어가 있을 수 있습니다. 본인 정보로 바꾸려면 `d:\gg`에서:
+
+```bash
+git config user.email "본인@이메일"
+git config user.name "본인 이름"
+```
+
 ## GitHub에 올리기
 
 1. [GitHub](https://github.com/new)에서 새 저장소를 만듭니다 (비어 있는 저장소).
