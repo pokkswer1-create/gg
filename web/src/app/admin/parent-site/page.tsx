@@ -1,8 +1,10 @@
+import { CopyShareUrl } from "@/components/copy-share-url";
+import { getDeployedSiteBase, getParentsPublicUrl } from "@/lib/site-url";
 import Link from "next/link";
 
 export default function ParentSiteAdminPage() {
-  const siteBase = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ?? "";
-  const parentsPublicUrl = siteBase ? `${siteBase}/parents` : null;
+  const siteBase = getDeployedSiteBase();
+  const parentsPublicUrl = getParentsPublicUrl();
 
   return (
     <main className="mx-auto flex w-full max-w-3xl flex-col gap-8 px-4 py-8">
@@ -57,19 +59,42 @@ export default function ParentSiteAdminPage() {
         </Link>
       </section>
 
-      <section className="rounded-xl border border-dashed border-zinc-300 bg-zinc-50/80 p-5 dark:border-zinc-700 dark:bg-zinc-900/50">
-        <h3 className="text-sm font-medium text-zinc-800 dark:text-zinc-200">학부모에게 보낼 링크</h3>
-        <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-          배포 도메인을 <code className="rounded bg-white px-1 dark:bg-zinc-800">NEXT_PUBLIC_SITE_URL</code>에
-          넣으면 아래에 전체 URL이 표시됩니다.
+      <section className="rounded-xl border border-dashed border-sky-300 bg-sky-50/90 p-5 dark:border-sky-800 dark:bg-sky-950/40">
+        <h3 className="text-sm font-medium text-zinc-900 dark:text-zinc-100">다른 폰·PC에서 테스트 / 학부모 공유</h3>
+        <p className="mt-1 text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">
+          Vercel에 배포돼 있으면 아래 주소는 <strong>인터넷만 되면 어디서나</strong> 열립니다. 카톡·문자로 보내
+          테스트하세요. 고정 주소를 쓰려면 환경 변수{" "}
+          <code className="rounded bg-white/90 px-1 dark:bg-zinc-800">NEXT_PUBLIC_SITE_URL</code>에 루트 URL을
+          넣으면 그 값이 우선합니다.
         </p>
-        <p className="mt-3 break-all font-mono text-sm text-zinc-800 dark:text-zinc-200">
-          {parentsPublicUrl ?? (
-            <>
-              <span className="text-zinc-500">(도메인 설정 시)</span> …/parents
-            </>
-          )}
+        <p className="mt-1 text-xs text-amber-800 dark:text-amber-200/90">
+          Vercel 프로젝트에서 <strong>Deployment Protection</strong>(접속 비밀번호)이 켜져 있으면 외부에서 막힙니다.
+          공개 테스트 시 끄거나 허용 목록을 설정하세요.
         </p>
+        {parentsPublicUrl ? (
+          <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <a
+              href={parentsPublicUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="break-all font-mono text-sm text-sky-700 underline hover:text-sky-900 dark:text-sky-300 dark:hover:text-sky-100"
+            >
+              {parentsPublicUrl}
+            </a>
+            <CopyShareUrl url={parentsPublicUrl} label="링크 복사" />
+          </div>
+        ) : (
+          <p className="mt-3 break-all font-mono text-sm text-zinc-500">
+            로컬만 실행 중이면 여기 URL이 비어 있습니다. Vercel에 배포하거나{" "}
+            <code className="rounded bg-white px-1 dark:bg-zinc-800">NEXT_PUBLIC_SITE_URL</code>을 설정하세요.
+          </p>
+        )}
+        {siteBase ? (
+          <p className="mt-3 text-xs text-zinc-500">
+            사이트 루트:{" "}
+            <span className="break-all font-mono text-zinc-700 dark:text-zinc-300">{siteBase}</span>
+          </p>
+        ) : null}
       </section>
     </main>
   );

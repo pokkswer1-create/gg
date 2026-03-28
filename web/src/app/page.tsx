@@ -1,3 +1,5 @@
+import { CopyShareUrl } from "@/components/copy-share-url";
+import { getParentsPublicUrl } from "@/lib/site-url";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { HomeAiAssistant } from "@/components/home-ai-assistant";
 import { HomeAttendanceNotifier } from "@/components/home-attendance-notifier";
@@ -34,8 +36,7 @@ async function checkSupabaseConnection() {
 
 export default async function Home() {
   const result = await checkSupabaseConnection();
-  const siteBase = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ?? "";
-  const parentsShareUrl = siteBase ? `${siteBase}/parents` : null;
+  const parentsShareUrl = getParentsPublicUrl();
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-6 px-6 py-16">
@@ -44,18 +45,21 @@ export default async function Home() {
       <div className="rounded-lg border border-sky-200 bg-sky-50/80 p-4 text-sm leading-relaxed text-zinc-800 dark:border-sky-900 dark:bg-sky-950/40 dark:text-zinc-200">
         <p className="font-medium text-sky-900 dark:text-sky-200">학부모 안내 페이지 (별도 주소)</p>
         <p className="mt-2 text-zinc-700 dark:text-zinc-300">
-          학부모에게는 홈(/)이 아니라 전용 링크만 안내하세요. 운영 도메인이 정해지면{" "}
-          <code className="rounded bg-white/80 px-1 dark:bg-zinc-900">NEXT_PUBLIC_SITE_URL</code>에
-          사이트 루트 URL을 넣으면 아래에 복사용 전체 주소가 표시됩니다.
+          학부모에게는 홈(/)이 아니라 전용 링크만 안내하세요. Vercel 배포 시 아래에{" "}
+          <strong>외부(다른 기기)에서 열 수 있는 주소</strong>가 자동으로 표시됩니다. 고정 도메인은{" "}
+          <code className="rounded bg-white/80 px-1 dark:bg-zinc-900">NEXT_PUBLIC_SITE_URL</code>로 지정할 수
+          있습니다.
         </p>
-        <p className="mt-2 font-mono text-[13px] break-all">
-          {parentsShareUrl ?? (
-            <>
-              예: <span className="text-zinc-500">https://your-domain.vercel.app</span>
-              <span className="text-sky-700 dark:text-sky-300">/parents</span>
-            </>
-          )}
-        </p>
+        <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+          <p className="font-mono text-[13px] break-all">
+            {parentsShareUrl ?? (
+              <>
+                로컬만: <span className="text-zinc-500">배포 후 또는 NEXT_PUBLIC_SITE_URL 설정 시 표시</span>
+              </>
+            )}
+          </p>
+          {parentsShareUrl ? <CopyShareUrl url={parentsShareUrl} label="학부모 링크 복사" /> : null}
+        </div>
         <p className="mt-2">
           <Link className="font-medium text-sky-700 underline hover:text-sky-900 dark:text-sky-300" href="/parents">
             학부모 안내 페이지 열기 →
