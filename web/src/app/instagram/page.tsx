@@ -22,6 +22,12 @@ type InternalComment = {
   created_at: string;
 };
 
+type InstaLink = {
+  instagram_business_id: string;
+  created_at: string;
+  expires_at: string | null;
+} | null;
+
 export default function InstagramPage() {
   const [tab, setTab] = useState<"my" | "reference" | "analytics">("my");
   const [myPosts, setMyPosts] = useState<Post[]>([]);
@@ -34,6 +40,10 @@ export default function InstagramPage() {
   >([]);
   const [internalComments, setInternalComments] = useState<InternalComment[]>([]);
   const [newComment, setNewComment] = useState("");
+
+  const [instaLink, setInstaLink] = useState<InstaLink>(null);
+  const [linkBusinessId, setLinkBusinessId] = useState("");
+  const [linkAccessToken, setLinkAccessToken] = useState("");
 
   const [caption, setCaption] = useState("");
   const [mediaUrl, setMediaUrl] = useState("");
@@ -69,6 +79,14 @@ export default function InstagramPage() {
     setMyPosts((json.data ?? []).map((p: Post) => ({ ...p })));
   };
 
+  const loadInstagramLink = async () => {
+    const res = await fetch("/api/instagram/link");
+    const json = await res.json();
+    if (res.ok) {
+      setInstaLink(json.link);
+    }
+  };
+
   const loadReferencePosts = async (categoryValue = category) => {
     const query = categoryValue ? `?category=${encodeURIComponent(categoryValue)}` : "";
     const res = await fetch(`/api/instagram/reference/posts${query}`);
@@ -83,6 +101,7 @@ export default function InstagramPage() {
   useEffect(() => {
     void loadMyPosts();
     void loadReferencePosts("");
+    void loadInstagramLink();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -164,6 +183,79 @@ export default function InstagramPage() {
     <main className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-4 py-8">
       <h1 className="text-2xl font-semibold">인스타그램 관리</h1>
       {error ? <p className="text-rose-500">{error}</p> : null}
+
+      <section className="grid gap-3 rounded-xl border p-4 text-sm dark:border-zinc-800 md:grid-cols-3">
+        <div className="md:col-span-2">
+          <p className="text-sm font-semibold">학원 인스타그램 계정 연동</p>
+          {instaLink ? (
+            <p className="mt-1 text-xs text-emerald-600">
+              연결됨: 비즈니스 ID <code>{instaLink.instagram_business_id}</code>
+            </p>
+          ) : (
+            <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-300">
+              아직 인스타그램 비즈니스 계정이 연결되지 않았습니다. 아래에 비즈니스 계정 ID와 액세스
+              토큰을 입력하면, 이 계정으로 게시물이 올라갑니다.
+            </p>
+          )}
+        </div>
+        <div className="flex flex-col gap-2">
+          <input
+            className="rounded border border-zinc-300 bg-transparent px-2 py-1 text-xs dark:border-zinc-700"
+            placeholder="Instagram Business Account ID"
+            value={linkBusinessId}
+            onChange={(e) => setLinkBusinessId(e.target.value)}
+          />
+          <input
+            className="rounded border border-zinc-300 bg-transparent px-2 py-1 text-xs dark:border-zinc-700"
+            placeholder="Long-lived Access Token"
+            value={linkAccessToken}
+            onChange={(e) => setLinkAccessToken(e.target.value)}
+          />
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className="flex-1 rounded bg-zinc-900 px-2 py-1 text-xs text-white dark:bg-zinc-100 dark:text-zinc-900"
+              onClick={async () => {
+                const res = await fetch("/api/instagram/link", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    businessId: linkBusinessId,
+                    accessToken: linkAccessToken,
+                  }),
+                });
+                const json = await res.json();
+                if (!res.ok) {
+                  setError(json.error ?? "인스타그램 연동 저장 실패");
+                  return;
+                }
+                setLinkAccessToken("");
+                setLinkBusinessId("");
+                await loadInstagramLink();
+              }}
+            >
+              계정 연동 저장
+            </button>
+            {instaLink ? (
+              <button
+                type="button"
+                className="rounded border border-zinc-300 px-2 py-1 text-xs dark:border-zinc-700"
+                onClick={async () => {
+                  const res = await fetch("/api/instagram/link", { method: "DELETE" });
+                  const json = await res.json();
+                  if (!res.ok) {
+                    setError(json.error ?? "연동 해제 실패");
+                    return;
+                  }
+                  setInstaLink(null);
+                }}
+              >
+                연동 해제
+              </button>
+            ) : null}
+          </div>
+        </div>
+      </section>
 
       <section className="flex gap-2">
         <button

@@ -1,5 +1,5 @@
 import { requireRole } from "@/lib/auth/guards";
-import { publishToInstagram } from "@/lib/instagram/graph";
+import { publishToInstagram, publishToInstagramForAccount } from "@/lib/instagram/graph";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
@@ -39,6 +39,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "미디어 URL 또는 파일이 필요합니다." }, { status: 400 });
   }
 
+  // 현재 사용자(프로필)에 연결된 인스타 비즈니스 계정 조회
+  const { data: link } = await supabaseServer
+    .from("instagram_links")
+    .select("instagram_business_id, access_token")
+    .eq("owner_profile_id", guard.userId)
+    .maybeSingle();
+
   const { data: inserted, error: insertError } = await supabaseServer
     .from("instagram_posts")
     .insert({
@@ -61,7 +68,15 @@ export async function POST(request: Request) {
   }
 
   if (publishType === "now") {
-    const instagram = await publishToInstagram(imageUrl, caption, hashtags);
+    const instagram = link
+      ? await publishToInstagramForAccount(
+          link.instagram_business_id,
+          link.access_token,
+          imageUrl,
+          caption,
+          hashtags,
+        )
+      : await publishToInstagram(imageUrl, caption, hashtags);
     const { error: updateError } = await supabaseServer
       .from("instagram_posts")
       .update({

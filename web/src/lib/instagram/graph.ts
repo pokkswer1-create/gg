@@ -6,17 +6,13 @@ function hasInstagramEnv() {
   );
 }
 
-export async function publishToInstagram(
+async function corePublish(
+  accountId: string,
+  accessToken: string,
   imageUrl: string,
   caption: string,
   hashtags: string[]
 ): Promise<{ id: string }> {
-  if (!hasInstagramEnv()) {
-    return { id: `mock-${Date.now()}` };
-  }
-
-  const accountId = process.env.INSTAGRAM_BUSINESS_ACCOUNT_ID!;
-  const accessToken = process.env.INSTAGRAM_ACCESS_TOKEN!;
   const createRes = await fetch(`${GRAPH_BASE}/${accountId}/media`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -45,6 +41,30 @@ export async function publishToInstagram(
   }
 
   return { id: publishJson.id as string };
+}
+
+export async function publishToInstagram(
+  imageUrl: string,
+  caption: string,
+  hashtags: string[]
+): Promise<{ id: string }> {
+  if (!hasInstagramEnv()) {
+    return { id: `mock-${Date.now()}` };
+  }
+
+  const accountId = process.env.INSTAGRAM_BUSINESS_ACCOUNT_ID!;
+  const accessToken = process.env.INSTAGRAM_ACCESS_TOKEN!;
+  return corePublish(accountId, accessToken, imageUrl, caption, hashtags);
+}
+
+export async function publishToInstagramForAccount(
+  accountId: string,
+  accessToken: string,
+  imageUrl: string,
+  caption: string,
+  hashtags: string[]
+): Promise<{ id: string }> {
+  return corePublish(accountId, accessToken, imageUrl, caption, hashtags);
 }
 
 export async function fetchInstagramPostStats(postId: string) {

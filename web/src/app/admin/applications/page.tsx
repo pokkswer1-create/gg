@@ -1,5 +1,6 @@
 "use client";
 
+import { authFetch } from "@/lib/auth-fetch";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -10,6 +11,15 @@ function fmt(dt: unknown) {
   const s = String(dt);
   if (s.length >= 16) return s.slice(0, 16).replace("T", " ");
   return s;
+}
+
+function getSourceLabel(notes: unknown) {
+  const raw = typeof notes === "string" ? notes : "";
+  const m = raw.match(/\[source\]\s*([^\n\r]+)/i);
+  if (!m) return "기본";
+  const source = m[1].trim();
+  if (source.includes("volleyballclass.com")) return "FAV";
+  return source || "기본";
 }
 
 function ApplicationsTable({
@@ -72,6 +82,7 @@ const TABS = [
 
 export default function AdminApplicationsPage() {
   const [tab, setTab] = useState<(typeof TABS)[number]["id"]>("trial");
+  const [sourceFilter, setSourceFilter] = useState<"all" | "fav">("all");
   const [trials, setTrials] = useState<Row[]>([]);
   const [regulars, setRegulars] = useState<Row[]>([]);
   const [elites, setElites] = useState<Row[]>([]);
@@ -84,7 +95,7 @@ export default function AdminApplicationsPage() {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch("/api/admin/applications");
+      const res = await authFetch("/api/admin/applications");
       const json = await res.json();
       if (!res.ok) {
         setError(json.error ?? "불러오기 실패");
@@ -112,6 +123,7 @@ export default function AdminApplicationsPage() {
   const trialCols = useMemo(
     () => [
       { key: "application_date", label: "접수일시" },
+      { key: "source_label", label: "유입" },
       { key: "student_name", label: "수강생" },
       { key: "phone", label: "연락처" },
       { key: "parent_phone", label: "보호자" },
@@ -126,6 +138,7 @@ export default function AdminApplicationsPage() {
   const regularCols = useMemo(
     () => [
       { key: "application_date", label: "접수일시" },
+      { key: "source_label", label: "유입" },
       { key: "student_name", label: "수강생" },
       { key: "phone", label: "연락처" },
       { key: "parent_phone", label: "보호자" },
@@ -141,6 +154,7 @@ export default function AdminApplicationsPage() {
   const eliteCols = useMemo(
     () => [
       { key: "application_date", label: "접수일시" },
+      { key: "source_label", label: "유입" },
       { key: "student_name", label: "수강생" },
       { key: "phone", label: "연락처" },
       { key: "school", label: "학교" },
@@ -154,6 +168,7 @@ export default function AdminApplicationsPage() {
   const makeupCols = useMemo(
     () => [
       { key: "application_date", label: "접수일시" },
+      { key: "source_label", label: "유입" },
       { key: "student_name", label: "수강생" },
       { key: "phone", label: "연락처" },
       { key: "parent_phone", label: "보호자" },
@@ -174,14 +189,19 @@ export default function AdminApplicationsPage() {
           : tab === "elite"
             ? elites
             : makeups;
-    return raw.map((r) => {
+    const mapped = raw.map((r) => {
       const o = { ...r };
       if ("application_date" in o) o.application_date = fmt(o.application_date);
       if ("counseling_date" in o) o.counseling_date = fmt(o.counseling_date);
       if ("needs_shuttle" in o) o.needs_shuttle = o.needs_shuttle ? "예" : "아니오";
+      o.source_label = getSourceLabel(o.notes);
       return o;
     });
-  }, [tab, trials, regulars, elites, makeups]);
+    if (sourceFilter === "fav") {
+      return mapped.filter((r) => String(r.source_label) === "FAV");
+    }
+    return mapped;
+  }, [tab, trials, regulars, elites, makeups, sourceFilter]);
 
   const cols =
     tab === "trial"
@@ -247,6 +267,30 @@ export default function AdminApplicationsPage() {
             </span>
           </button>
         ))}
+        <div className="ml-auto flex gap-2">
+          <button
+            type="button"
+            onClick={() => setSourceFilter("all")}
+            className={`rounded-full px-3 py-1 text-sm ${
+              sourceFilter === "all"
+                ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
+                : "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+            }`}
+          >
+            전체 유입
+          </button>
+          <button
+            type="button"
+            onClick={() => setSourceFilter("fav")}
+            className={`rounded-full px-3 py-1 text-sm ${
+              sourceFilter === "fav"
+                ? "bg-violet-600 text-white"
+                : "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+            }`}
+          >
+            FAV만 보기
+          </button>
+        </div>
       </div>
 
       {loading ? (

@@ -2,6 +2,7 @@
 
 import type { Student } from "@/lib/types";
 import Link from "next/link";
+import { QRCodeSVG } from "qrcode.react";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 
 type StudentWithMeta = Student & {
@@ -51,7 +52,9 @@ export default function StudentsPage() {
   const [loading, setLoading] = useState(false);
   const [announcements, setAnnouncements] = useState<{ id: string; title: string }[]>([]);
   const [announcementId, setAnnouncementId] = useState("");
-  const [sendChannel, setSendChannel] = useState<"kakao" | "sms" | "email">("kakao");
+  const [sendChannel] = useState<"kakao" | "sms" | "email">("kakao");
+  const [checkedIds, setCheckedIds] = useState<string[]>([]);
+  const [smsText, setSmsText] = useState("");
 
   const loadStudents = async () => {
     const params = new URLSearchParams();
@@ -165,19 +168,91 @@ export default function StudentsPage() {
       setError("발송할 안내를 선택해 주세요.");
       return;
     }
-    const memberIds = students.map((s) => s.id);
+    const targetIds = checkedIds.length > 0 ? checkedIds : students.map((s) => s.id);
+    if (targetIds.length === 0) {
+      setError("안내를 보낼 회원이 없습니다.");
+      return;
+    }
+
     const res = await fetch("/api/announcements/send", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ announcementId, memberIds, channel: sendChannel }),
+      body: JSON.stringify({ announcementId, memberIds: targetIds, channel: sendChannel }),
     });
     const json = await res.json();
     if (!res.ok) {
       setError(json.error ?? "안내 발송 실패");
       return;
     }
-    setMessage(`안내 발송 완료: 성공 ${json.sentCount}, 실패 ${json.failCount}`);
+    setMessage(
+      `안내 발송 완료 (${sendChannel === "kakao" ? "카카오톡" : sendChannel}): 대상 ${
+        targetIds.length
+      }명, 성공 ${json.sentCount}, 실패 ${json.failCount}`
+    );
   };
+
+  const sendAnnouncementToOne = async (memberId: string) => {
+    if (!announcementId) {
+      setError("발송할 안내를 선택해 주세요.");
+      return;
+    }
+    const res = await fetch("/api/announcements/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ announcementId, memberIds: [memberId], channel: sendChannel }),
+    });
+    const json = await res.json();
+    if (!res.ok) {
+      setError(json.error ?? "안내 발송 실패");
+      return;
+    }
+    setMessage(
+      `안내 발송 완료 (${sendChannel === "kakao" ? "카카오톡" : sendChannel}): 대상 1명, 성공 ${json.sentCount}, 실패 ${json.failCount}`
+    );
+  };
+
+  const sendSmsBulk = async () => {
+    if (!smsText.trim()) {
+      setError("보낼 문자 내용을 입력해 주세요.");
+      return;
+    }
+    const targetIds = checkedIds.length > 0 ? checkedIds : students.map((s) => s.id);
+    if (targetIds.length === 0) {
+      setError("문자를 보낼 회원이 없습니다.");
+      return;
+    }
+    const res = await fetch("/api/sms/enqueue-bulk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        memberIds: targetIds,
+        message: smsText,
+      }),
+    });
+    const json = await res.json();
+    if (!res.ok) {
+      setError(json.error ?? "문자 큐 등록 실패");
+      return;
+    }
+    setMessage(
+      `안드로이드 폰 문자 큐 등록 완료: 요청 ${json.requested}명 중 ${json.enqueued}명 대기열 추가`
+    );
+  };
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const smsQrConfig =
+    supabaseUrl && supabaseKey
+      ? {
+          type: "sms_gateway_config",
+          supabaseUrl,
+          supabaseKey,
+          projectName: "학원 관리 시스템",
+          deviceName: "원장님폰-1",
+        }
+      : null;
+  const smsQrText = smsQrConfig ? JSON.stringify(smsQrConfig) : "";
+  const selectedStudents = students.filter((s) => checkedIds.includes(s.id));
 
   return (
     <main className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-8">
@@ -310,7 +385,7 @@ export default function StudentsPage() {
         </button>
       </section>
 
-      <section className="grid gap-3 rounded-xl border p-4 dark:border-zinc-800 md:grid-cols-4">
+      <section className="grid gap-3 rounded-xl border p-4 dark:border-zinc-800 md:grid-cols-5">
         <div className="md:col-span-4">
           <h2 className="text-sm font-semibold">엑셀 일괄 등록</h2>
           <p className="mt-1 text-xs opacity-75">
@@ -346,35 +421,92 @@ export default function StudentsPage() {
         </button>
       </section>
 
-      <section className="grid gap-3 rounded-xl border p-4 dark:border-zinc-800 md:grid-cols-4">
-        <select
-          className="rounded border border-zinc-300 bg-transparent px-3 py-2 dark:border-zinc-700 md:col-span-2"
-          value={announcementId}
-          onChange={(e) => setAnnouncementId(e.target.value)}
-        >
-          <option value="">안내 선택</option>
-          {announcements.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.title}
-            </option>
-          ))}
-        </select>
-        <select
-          className="rounded border border-zinc-300 bg-transparent px-3 py-2 dark:border-zinc-700"
-          value={sendChannel}
-          onChange={(e) => setSendChannel(e.target.value as "kakao" | "sms" | "email")}
-        >
-          <option value="kakao">카카오톡</option>
-          <option value="sms">문자</option>
-          <option value="email">이메일</option>
-        </select>
-        <button
-          type="button"
-          onClick={sendAnnouncement}
-          className="rounded bg-zinc-900 px-3 py-2 text-white dark:bg-zinc-100 dark:text-zinc-900"
-        >
-          현재 목록 회원에게 안내 발송
-        </button>
+      <section className="grid gap-3 rounded-xl border p-4 dark:border-zinc-800">
+        <div>
+          <h2 className="text-sm font-semibold">안드로이드 폰 문자 발송 큐</h2>
+          <p className="mt-1 text-xs opacity-75">
+            이곳에서 등록한 문자는 Supabase의 sms_queue에 쌓이고, 안드로이드 폰 앱이 주기적으로 가져가 실제
+            SMS로 발송합니다. 선택된 회원이 있으면 선택 회원에게만, 없으면 현재 목록 전체에게 보냅니다.
+          </p>
+        </div>
+        <div className="mt-3 flex flex-col gap-3 md:flex-row md:items-stretch">
+          {/* 안내 문자 선택된 목록 (맨 앞) */}
+          <div className="h-28 w-full max-w-xs rounded border border-zinc-300 px-3 py-2 text-xs dark:border-zinc-700">
+            <p className="mb-1 font-semibold">안내 문자 선택된 목록</p>
+            {selectedStudents.length === 0 ? (
+              <p className="text-zinc-500">체크된 회원이 없습니다.</p>
+            ) : (
+              <ul className="flex max-h-20 flex-wrap gap-1 overflow-y-auto">
+                {selectedStudents.map((s) => (
+                  <li
+                    key={s.id}
+                    className="rounded bg-zinc-100 px-1.5 py-0.5 text-[11px] dark:bg-zinc-800"
+                  >
+                    {s.name} ({s.parent_phone || s.phone})
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          {/* 문자 내용 */}
+          <textarea
+            className="h-28 w-full max-w-sm rounded border border-zinc-300 bg-transparent px-3 py-2 text-sm dark:border-zinc-700"
+            placeholder="학부모에게 보낼 문자 내용을 입력하세요. 예) [ㅇㅇ학원] 3월 수업 안내입니다..."
+            value={smsText}
+            onChange={(e) => setSmsText(e.target.value)}
+          />
+
+          {/* 문자 큐 등록 + QR */}
+          <div className="flex w-44 flex-col items-stretch gap-2">
+            <button
+              type="button"
+              onClick={sendSmsBulk}
+              className="rounded bg-zinc-900 px-3 py-2 text-sm text-white dark:bg-zinc-100 dark:text-zinc-900"
+            >
+              문자 큐 등록
+            </button>
+            {smsQrConfig ? (
+              <div className="flex flex-1 items-center justify-center rounded border border-dashed border-zinc-300 px-1 py-1 text-[10px] dark:border-zinc-700">
+                <div className="flex flex-col items-center gap-1">
+                  <div className="rounded bg-white p-1 dark:bg-zinc-900">
+                    <QRCodeSVG value={smsQrText} size={56} includeMargin={false} />
+                  </div>
+                  <span className="text-[10px] text-zinc-500 dark:text-zinc-400">
+                    앱에서 QR 스캔
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-1 items-center text-[10px] text-rose-500">
+                Supabase 환경변수 미설정으로 QR 생성 불가
+              </div>
+            )}
+          </div>
+
+          {/* 안내 선택 + 발송 버튼 (항상 카카오톡으로 발송) */}
+          <div className="flex w-56 flex-col justify-between gap-2">
+            <select
+              className="rounded border border-zinc-300 bg-transparent px-2 py-1 text-xs dark:border-zinc-700"
+              value={announcementId}
+              onChange={(e) => setAnnouncementId(e.target.value)}
+            >
+              <option value="">카카오톡으로 보낼 안내 선택</option>
+              {announcements.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.title}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={sendAnnouncement}
+              className="rounded bg-zinc-900 px-3 py-1.5 text-xs text-white dark:bg-zinc-100 dark:text-zinc-900"
+            >
+              {checkedIds.length > 0 ? "현재 선택 회원 안내 발송" : "현재 목록 안내 발송"}
+            </button>
+          </div>
+        </div>
       </section>
 
       <section className="flex flex-wrap gap-2">
@@ -403,6 +535,15 @@ export default function StudentsPage() {
         <table className="min-w-full text-sm">
           <thead className="bg-zinc-100 dark:bg-zinc-900/60">
             <tr>
+              <Th>
+                <input
+                  type="checkbox"
+                  checked={students.length > 0 && checkedIds.length === students.length}
+                  onChange={(e) =>
+                    setCheckedIds(e.target.checked ? students.map((s) => s.id) : [])
+                  }
+                />
+              </Th>
               <Th>이름</Th>
               <Th>학년</Th>
               <Th>연락처</Th>
@@ -412,11 +553,23 @@ export default function StudentsPage() {
               <Th>가입일</Th>
               <Th>결제월</Th>
               <Th>변경</Th>
+              <Th>안내</Th>
             </tr>
           </thead>
           <tbody>
             {students.map((student) => (
               <tr key={student.id} className="border-t border-zinc-200 dark:border-zinc-800">
+                <Td>
+                  <input
+                    type="checkbox"
+                    checked={checkedIds.includes(student.id)}
+                    onChange={(e) => {
+                      setCheckedIds((prev) =>
+                        e.target.checked ? [...prev, student.id] : prev.filter((id) => id !== student.id)
+                      );
+                    }}
+                  />
+                </Td>
                 <Td>
                   <Link className="underline" href={`/students/${student.id}`}>
                     {student.name}
@@ -462,6 +615,15 @@ export default function StudentsPage() {
                     <option value="paused">휴원</option>
                     <option value="withdrawn">퇴원</option>
                   </select>
+                </Td>
+                <Td>
+                  <button
+                    type="button"
+                    className="rounded border border-zinc-300 px-2 py-1 text-xs dark:border-zinc-700"
+                    onClick={() => sendAnnouncementToOne(student.id)}
+                  >
+                    개별 발송
+                  </button>
                 </Td>
               </tr>
             ))}

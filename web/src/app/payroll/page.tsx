@@ -1,5 +1,6 @@
 "use client";
 
+import { authFetch } from "@/lib/auth-fetch";
 import {
   computeDeductionBreakdown,
   FOUR_INSURANCE_OPTIONS,
@@ -97,7 +98,7 @@ export default function PayrollPage() {
   }, [rows]);
 
   const loadRows = async () => {
-    const res = await fetch(`/api/employees?month=${month}`);
+    const res = await authFetch(`/api/employees?month=${month}`);
     const json = await res.json();
     if (!res.ok) {
       setError(json.error ?? "Failed to load payroll.");
@@ -131,7 +132,7 @@ export default function PayrollPage() {
   }, [month]);
 
   const calculate = async () => {
-    const res = await fetch(`/api/salary/calculate?month=${month}`, {
+    const res = await authFetch(`/api/salary/calculate?month=${month}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({}),
@@ -146,7 +147,7 @@ export default function PayrollPage() {
   };
 
   const pay = async (row: EmployeeSalaryRow) => {
-    const res = await fetch("/api/salary/pay", {
+    const res = await authFetch("/api/salary/pay", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -167,7 +168,7 @@ export default function PayrollPage() {
   };
 
   const createEmployee = async () => {
-    const res = await fetch("/api/employees/create", {
+    const res = await authFetch("/api/employees/create", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(form),

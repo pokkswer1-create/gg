@@ -1,5 +1,6 @@
 "use client";
 
+import { authFetch } from "@/lib/auth-fetch";
 import type { CalendarEventDto } from "@/lib/calendar-types";
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 
@@ -34,7 +35,7 @@ export function StaffCalendar() {
     setLoading(true);
     setWarn("");
     try {
-      const res = await fetch(`/api/home/calendar-events?year=${year}&month=${month}`);
+      const res = await authFetch(`/api/home/calendar-events?year=${year}&month=${month}`);
       const json = await res.json();
       if (!res.ok) {
         setEvents({});
@@ -95,7 +96,7 @@ export function StaffCalendar() {
 
   async function deleteManual(id: string) {
     if (!confirm("이 수동 일정을 삭제할까요?")) return;
-    const res = await fetch(`/api/home/calendar-manual?id=${encodeURIComponent(id)}`, {
+    const res = await authFetch(`/api/home/calendar-manual?id=${encodeURIComponent(id)}`, {
       method: "DELETE",
     });
     if (!res.ok) {
@@ -305,7 +306,7 @@ function AddEventModal({
     const fd = new FormData(e.currentTarget);
     setSaving(true);
     try {
-      const res = await fetch("/api/home/calendar-manual", {
+      const res = await authFetch("/api/home/calendar-manual", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

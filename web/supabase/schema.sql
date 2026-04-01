@@ -258,6 +258,20 @@ create table if not exists public.naver_class_listings (
   created_at timestamptz not null default now()
 );
 
+-- SMS 발송 큐: 안드로이드 폰이 polling 하여 실제 문자 발송
+create table if not exists public.sms_queue (
+  id uuid primary key default gen_random_uuid(),
+  to_phone text not null,
+  message text not null,
+  meta jsonb default '{}'::jsonb,
+  status text not null default 'pending', -- pending | sent | failed
+  error text,
+  created_at timestamptz not null default now(),
+  sent_at timestamptz
+);
+
+alter table public.sms_queue enable row level security;
+
 create table if not exists public.naver_reservations (
   id uuid primary key default gen_random_uuid(),
   naver_reservation_id text unique not null,
@@ -378,6 +392,20 @@ create table if not exists public.reference_accounts (
   is_following boolean not null default false,
   added_at timestamptz not null default now()
 );
+
+-- 학원(프로필)별 인스타그램 비즈니스 계정 연동
+create table if not exists public.instagram_links (
+  id uuid primary key default gen_random_uuid(),
+  owner_profile_id uuid not null references public.profiles(id) on delete cascade,
+  instagram_business_id text not null,
+  access_token text not null,
+  expires_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (owner_profile_id)
+);
+
+alter table public.instagram_links enable row level security;
 
 create table if not exists public.shuttle_routes (
   id uuid primary key default gen_random_uuid(),

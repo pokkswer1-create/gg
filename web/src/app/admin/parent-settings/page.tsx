@@ -1,5 +1,6 @@
 "use client";
 
+import { authFetch } from "@/lib/auth-fetch";
 import { defaultAcademySettings, defaultSiteBranding, mergeSiteBranding } from "@/lib/parent-site/defaults";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
@@ -45,8 +46,8 @@ export default function ParentSettingsPage() {
     setError("");
     try {
       const [sRes, nRes] = await Promise.all([
-        fetch("/api/admin/parent-settings"),
-        fetch("/api/admin/public-notices"),
+        authFetch("/api/admin/parent-settings"),
+        authFetch("/api/admin/public-notices"),
       ]);
       const sJson = await sRes.json();
       const nJson = await nRes.json();
@@ -111,12 +112,18 @@ export default function ParentSettingsPage() {
   async function saveKey(key: string, value: unknown) {
     setMessage("");
     setError("");
-    const res = await fetch("/api/admin/parent-settings", {
+    const res = await authFetch("/api/admin/parent-settings", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ settingKey: key, settingValue: value }),
     });
-    const json = await res.json();
+    let json: { error?: string } = {};
+    try {
+      json = (await res.json()) as { error?: string };
+    } catch {
+      setError(res.status === 401 ? "로그인이 필요합니다." : "저장 응답을 읽지 못했습니다.");
+      return;
+    }
     if (!res.ok) {
       setError(json.error ?? "저장 실패");
       return;
@@ -160,7 +167,7 @@ export default function ParentSettingsPage() {
       setError("제목과 내용을 입력하세요.");
       return;
     }
-    const res = await fetch("/api/admin/public-notices", {
+    const res = await authFetch("/api/admin/public-notices", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
