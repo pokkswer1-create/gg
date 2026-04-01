@@ -13,7 +13,8 @@ type ProfileRow = {
 };
 
 function toBasicAuth(id: string, password: string) {
-  return `Basic ${btoa(`${id}:${password}`)}`;
+  if (typeof window === "undefined") return "";
+  return `Basic ${window.btoa(`${id}:${password}`)}`;
 }
 
 export default function UserApprovalsPage() {
