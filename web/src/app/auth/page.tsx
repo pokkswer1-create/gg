@@ -111,7 +111,8 @@ export default function AuthPage() {
     }
 
     localStorage.setItem("kva-refresh-once", "1");
-    setStatus("로그인 완료.");
+    setStatus("로그인 완료. 대시보드로 이동합니다.");
+    window.location.href = "/dashboard";
   };
 
   const handleSignOut = async () => {
@@ -135,12 +136,38 @@ export default function AuthPage() {
     setStatus("로그아웃 완료.");
   };
 
+  const handleFindId = () => {
+    setStatus("아이디(이메일) 찾기는 관리자에게 문의해 주세요.");
+  };
+
+  const handleResetPassword = async () => {
+    if (!supabase) {
+      setStatus("Supabase 클라이언트가 아직 준비되지 않았습니다.");
+      return;
+    }
+    if (!email.trim()) {
+      setStatus("비밀번호 찾기를 위해 이메일을 먼저 입력해 주세요.");
+      return;
+    }
+    setLoading(true);
+    setStatus("");
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: `${window.location.origin}/auth`,
+    });
+    setLoading(false);
+    if (error) {
+      setStatus(`비밀번호 재설정 메일 전송 실패: ${error.message}`);
+      return;
+    }
+    setStatus("비밀번호 재설정 메일을 보냈습니다. 이메일을 확인해 주세요.");
+  };
+
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-xl flex-col justify-center gap-6 px-6 py-16">
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-semibold tracking-tight">인증 관리</h1>
-        <Link className="text-sm underline opacity-80 hover:opacity-100" href="/">
-          홈으로
+        <Link className="text-sm underline opacity-80 hover:opacity-100" href="/dashboard">
+          대시보드
         </Link>
       </div>
 
@@ -200,6 +227,25 @@ export default function AuthPage() {
             type="button"
           >
             로그아웃
+          </button>
+        </div>
+
+        <div className="flex flex-wrap gap-2 pt-1">
+          <button
+            className="rounded-md border border-zinc-300 px-4 py-2 text-sm disabled:opacity-50 dark:border-zinc-700"
+            onClick={handleFindId}
+            disabled={loading}
+            type="button"
+          >
+            아이디 찾기
+          </button>
+          <button
+            className="rounded-md border border-zinc-300 px-4 py-2 text-sm disabled:opacity-50 dark:border-zinc-700"
+            onClick={handleResetPassword}
+            disabled={loading}
+            type="button"
+          >
+            비밀번호 찾기
           </button>
         </div>
       </div>
