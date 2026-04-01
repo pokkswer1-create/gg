@@ -69,7 +69,7 @@ export default function AuthPage() {
 
     setStatus(
       data.user?.identities?.length
-        ? "회원가입 완료. 이메일 인증을 확인해주세요."
+        ? "회원가입 완료. 관리자 승인 후 로그인할 수 있습니다. (이메일 인증이 켜져 있으면 인증도 완료하세요)"
         : "이미 등록된 이메일입니다. 로그인해 주세요."
     );
   };
@@ -84,12 +84,30 @@ export default function AuthPage() {
       return;
     }
 
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     setLoading(false);
 
     if (error) {
       setStatus(`로그인 실패: ${error.message}`);
       return;
+    }
+
+    const token = data.session?.access_token;
+    if (token) {
+      const checkRes = await fetch("/api/auth/access-status", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const checkJson = await checkRes.json();
+      if (!checkRes.ok) {
+        await supabase.auth.signOut();
+        setStatus(checkJson.error ?? "승인 상태 확인 실패");
+        return;
+      }
+      if (!checkJson.approved) {
+        await supabase.auth.signOut();
+        setStatus("관리자 승인 대기중입니다. 승인 후 로그인해 주세요.");
+        return;
+      }
     }
 
     localStorage.setItem("kva-refresh-once", "1");

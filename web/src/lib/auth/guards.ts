@@ -66,7 +66,7 @@ export async function requireRole(allowedRoles: UserRole[]): Promise<GuardSucces
   const supabase = getSupabaseServer();
   const { data: profile, error: profileError } = await supabase
     .from("profiles")
-    .select("role")
+    .select("role, approved")
     .eq("id", user.id)
     .single();
 
@@ -74,6 +74,13 @@ export async function requireRole(allowedRoles: UserRole[]): Promise<GuardSucces
     return {
       ok: false,
       response: NextResponse.json({ error: "Profile role not found" }, { status: 403 }),
+    };
+  }
+
+  if (profile.approved === false) {
+    return {
+      ok: false,
+      response: NextResponse.json({ error: "관리자 승인 대기중입니다." }, { status: 403 }),
     };
   }
 

@@ -7,6 +7,15 @@ create table if not exists public.profiles (
   created_at timestamptz not null default now()
 );
 
+alter table public.profiles
+add column if not exists email text;
+
+alter table public.profiles
+add column if not exists approved boolean not null default true;
+
+alter table public.profiles
+add column if not exists approved_at timestamptz;
+
 create table if not exists public.students (
   id uuid primary key default gen_random_uuid(),
   name text not null,

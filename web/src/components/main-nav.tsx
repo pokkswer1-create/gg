@@ -33,6 +33,7 @@ const dropdowns: DropdownDef[] = [
       { href: "/payroll", label: "급여" },
       { href: "/expenses", label: "지출" },
       { href: "/instagram", label: "인스타" },
+      { href: "/admin/user-approvals", label: "회원승인" },
       { href: "/auth", label: "인증" },
     ],
   },
