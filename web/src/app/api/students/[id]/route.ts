@@ -1,4 +1,5 @@
 import { requireRole } from "@/lib/auth/guards";
+import { isMissingEnrollmentDiscountColumn } from "@/lib/enrollment-db-compat";
 import { calculateFinalFee } from "@/lib/tuition";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
@@ -180,7 +181,7 @@ export async function PATCH(request: Request, context: Context) {
     },
   });
 
-  const { data, error } = await supabaseServer
+  let { data, error } = await supabaseServer
     .from("students")
     .select(
       `
@@ -203,6 +204,26 @@ export async function PATCH(request: Request, context: Context) {
     .eq("id", id)
     .single();
 
+  if (error && isMissingEnrollmentDiscountColumn(error.message)) {
+    const fb = await supabaseServer
+      .from("students")
+      .select(
+        `
+      *,
+      enrollments(
+        id,
+        class_id,
+        monthly_fee,
+        classes(id, name, monthly_fee)
+      ),
+      payments(id, month_key, amount_due, amount_paid, status, paid_at, payment_method, notes, status_changed_at)
+    `
+      )
+      .eq("id", id)
+      .single();
+    data = fb.data;
+    error = fb.error;
+  }
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

@@ -1,4 +1,5 @@
 import { requireRole } from "@/lib/auth/guards";
+import { isMissingEnrollmentDiscountColumn } from "@/lib/enrollment-db-compat";
 import { calculateFinalFee } from "@/lib/tuition";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
@@ -59,7 +60,46 @@ export async function GET(request: Request) {
   builder = builder.order(column, { ascending: direction !== "desc" });
   builder = builder.range((page - 1) * pageSize, page * pageSize - 1);
 
-  const { data, error } = await builder;
+  let { data, error } = await builder;
+  if (error && isMissingEnrollmentDiscountColumn(error.message)) {
+    // DB migration 전 하위 호환: 할인 컬럼 없이 재조회
+    let fallbackBuilder = supabaseServer.from("students").select(`
+      *,
+      enrollments(
+        id,
+        class_id,
+        monthly_fee,
+        classes(id, name, teacher_name, class_type, monthly_fee, monthly_sessions)
+      ),
+      payments(id, month_key, amount_due, amount_paid, status, paid_at, payment_method, notes, status_changed_at)
+    `);
+
+    if (query) {
+      fallbackBuilder = fallbackBuilder.or(
+        `name.ilike.%${query}%,phone.ilike.%${query}%,parent_phone.ilike.%${query}%,father_phone.ilike.%${query}%,mother_phone.ilike.%${query}%`
+      );
+    }
+    if (status) {
+      const mappedStatus = status === "break" ? "paused" : status;
+      fallbackBuilder = fallbackBuilder.eq("status", mappedStatus);
+    }
+    if (grade) {
+      fallbackBuilder = fallbackBuilder.eq("grade", grade);
+    }
+    if (classId) {
+      fallbackBuilder = fallbackBuilder.eq("enrollments.class_id", classId);
+    }
+    if (month) {
+      fallbackBuilder = fallbackBuilder.eq("payments.month_key", month);
+    }
+    fallbackBuilder = fallbackBuilder
+      .order(column, { ascending: direction !== "desc" })
+      .range((page - 1) * pageSize, page * pageSize - 1);
+
+    const fallbackRes = await fallbackBuilder;
+    data = fallbackRes.data;
+    error = fallbackRes.error;
+  }
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
@@ -155,7 +195,7 @@ export async function POST(request: Request) {
     const discountValue = Number(body.discount_value ?? 0);
     const monthlyFee = Number(body.monthly_fee ?? 0);
     const finalFee = calculateFinalFee(monthlyFee, discountType, discountValue);
-    await supabaseServer.from("enrollments").upsert(
+    const upsertRes = await supabaseServer.from("enrollments").upsert(
       {
         student_id: data.id,
         class_id: body.class_id,
@@ -169,6 +209,16 @@ export async function POST(request: Request) {
       },
       { onConflict: "student_id,class_id" }
     );
+    if (upsertRes.error && isMissingEnrollmentDiscountColumn(upsertRes.error.message)) {
+      await supabaseServer.from("enrollments").upsert(
+        {
+          student_id: data.id,
+          class_id: body.class_id,
+          monthly_fee: monthlyFee,
+        },
+        { onConflict: "student_id,class_id" }
+      );
+    }
   }
 
   return NextResponse.json({ data }, { status: 201 });

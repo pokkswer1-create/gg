@@ -1,4 +1,6 @@
 import { requireRole } from "@/lib/auth/guards";
+import { isMissingEnrollmentDiscountColumn } from "@/lib/enrollment-db-compat";
+import type { DiscountType } from "@/lib/types";
 import { calculateFinalFee } from "@/lib/tuition";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
@@ -46,32 +48,48 @@ export async function PATCH(request: Request) {
       }
 
       if (body.action === "change_class" && body.class_id) {
-        const current = await supabaseServer
+        let current = await supabaseServer
           .from("enrollments")
           .select("monthly_fee, discount_type, discount_value, discount_reason, discount_start_date, discount_end_date")
           .eq("student_id", studentId)
           .order("enrolled_at", { ascending: false })
           .limit(1)
           .maybeSingle();
+        if (current.error && isMissingEnrollmentDiscountColumn(current.error.message)) {
+          current = await supabaseServer
+            .from("enrollments")
+            .select("monthly_fee")
+            .eq("student_id", studentId)
+            .order("enrolled_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+        }
         if (current.error) throw new Error(current.error.message);
         const monthlyFee = Number(current.data?.monthly_fee ?? 0);
-        const discountType = current.data?.discount_type ?? "none";
-        const discountValue = Number(current.data?.discount_value ?? 0);
+        const discountType = ((current.data as { discount_type?: string } | null)?.discount_type ??
+          "none") as DiscountType;
+        const discountValue = Number((current.data as { discount_value?: number } | null)?.discount_value ?? 0);
         const finalFee = calculateFinalFee(monthlyFee, discountType, discountValue);
-        const res = await supabaseServer.from("enrollments").upsert(
+        let res = await supabaseServer.from("enrollments").upsert(
           {
             student_id: studentId,
             class_id: body.class_id,
             monthly_fee: monthlyFee,
             discount_type: discountType,
             discount_value: discountValue,
-            discount_reason: current.data?.discount_reason ?? null,
-            discount_start_date: current.data?.discount_start_date ?? null,
-            discount_end_date: current.data?.discount_end_date ?? null,
+            discount_reason: (current.data as { discount_reason?: string | null } | null)?.discount_reason ?? null,
+            discount_start_date: (current.data as { discount_start_date?: string | null } | null)?.discount_start_date ?? null,
+            discount_end_date: (current.data as { discount_end_date?: string | null } | null)?.discount_end_date ?? null,
             final_fee: finalFee,
           },
           { onConflict: "student_id,class_id" }
         );
+        if (res.error && isMissingEnrollmentDiscountColumn(res.error.message)) {
+          res = await supabaseServer.from("enrollments").upsert(
+            { student_id: studentId, class_id: body.class_id, monthly_fee: monthlyFee },
+            { onConflict: "student_id,class_id" }
+          );
+        }
         if (res.error) throw new Error(res.error.message);
       }
 
@@ -97,19 +115,37 @@ export async function PATCH(request: Request) {
             final_fee: finalFee,
           })
           .eq("id", enrollment.data.id);
+        if (res.error && isMissingEnrollmentDiscountColumn(res.error.message)) {
+          throw new Error(
+            "enrollments 할인 컬럼이 없습니다. Supabase SQL Editor에서 web/supabase/migrations/20260402120000_enrollments_discount_columns.sql 을 실행하세요."
+          );
+        }
         if (res.error) throw new Error(res.error.message);
       }
 
       if (body.action === "set_payment_status" && body.month_key && body.payment_status) {
-        const enrollment = await supabaseServer
+        let enrollment = await supabaseServer
           .from("enrollments")
           .select("final_fee, monthly_fee")
           .eq("student_id", studentId)
           .order("enrolled_at", { ascending: false })
           .limit(1)
           .maybeSingle();
+        if (enrollment.error && isMissingEnrollmentDiscountColumn(enrollment.error.message)) {
+          enrollment = await supabaseServer
+            .from("enrollments")
+            .select("monthly_fee")
+            .eq("student_id", studentId)
+            .order("enrolled_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+        }
         if (enrollment.error) throw new Error(enrollment.error.message);
-        const amountDue = Number(enrollment.data?.final_fee ?? enrollment.data?.monthly_fee ?? 0);
+        const amountDue = Number(
+          (enrollment.data as { final_fee?: number; monthly_fee?: number } | null)?.final_fee ??
+            enrollment.data?.monthly_fee ??
+            0
+        );
         const amountPaid = body.payment_status === "paid" ? amountDue : 0;
         const upsertRes = await supabaseServer
           .from("payments")
