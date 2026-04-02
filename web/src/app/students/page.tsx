@@ -4,6 +4,7 @@ import { authFetch } from "@/lib/auth-fetch";
 import type { DiscountType, Student } from "@/lib/types";
 import { calculateFinalFee, formatWon } from "@/lib/tuition";
 import Link from "next/link";
+import { QRCodeSVG } from "qrcode.react";
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 
 type StudentWithMeta = Student & {
@@ -70,6 +71,10 @@ export default function StudentsPage() {
   const [bulkMonth, setBulkMonth] = useState(new Date().toISOString().slice(0, 7));
   const [bulkPaymentStatus, setBulkPaymentStatus] =
     useState<"paid" | "pending" | "unpaid" | "refunded">("paid");
+  const [excelUploading, setExcelUploading] = useState(false);
+  const [announcements, setAnnouncements] = useState<{ id: string; title: string }[]>([]);
+  const [announcementId, setAnnouncementId] = useState("");
+  const [smsText, setSmsText] = useState("");
 
   const [editingStudent, setEditingStudent] = useState<StudentWithMeta | null>(null);
   const [editStatus, setEditStatus] = useState<Student["status"]>("active");
@@ -90,6 +95,16 @@ export default function StudentsPage() {
     () => Array.from({ length: 12 }).map((_, idx) => `${activeYear}-${String(idx + 1).padStart(2, "0")}`),
     [activeYear]
   );
+
+  const loadAnnouncements = async () => {
+    const res = await authFetch("/api/announcements");
+    const json = await res.json();
+    if (res.ok) {
+      setAnnouncements(
+        (json.data ?? []).map((x: { id: string; title: string }) => ({ id: x.id, title: x.title }))
+      );
+    }
+  };
 
   const loadClasses = async () => {
     const res = await authFetch("/api/classes");
@@ -152,8 +167,234 @@ export default function StudentsPage() {
     if (memberRes.ok) setMemberLogs(memberJson.data ?? []);
   };
 
+  const downloadFileWithAuth = async (url: string, fallbackFilename: string) => {
+    const res = await authFetch(url);
+    if (!res.ok) {
+      const json = (await res.json().catch(() => ({}))) as { error?: string };
+      setError(json.error ?? "파일 다운로드에 실패했습니다.");
+      return;
+    }
+    const blob = await res.blob();
+    const contentDisposition = res.headers.get("content-disposition") ?? "";
+    const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
+    const asciiMatch = contentDisposition.match(/filename=\"([^\"]+)\"/i);
+    const filename = decodeURIComponent(utf8Match?.[1] ?? asciiMatch?.[1] ?? fallbackFilename);
+    const objectUrl = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = objectUrl;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(objectUrl);
+  };
+
+  const downloadExcel = async () => {
+    const params = new URLSearchParams();
+    if (status) params.set("status", status);
+    if (classId) params.set("classId", classId);
+    await downloadFileWithAuth(
+      `/api/members/export-excel?${params.toString()}`,
+      `members-${new Date().toISOString().slice(0, 10)}.xlsx`
+    );
+  };
+
+  const downloadTemplateExcel = async () => {
+    await downloadFileWithAuth("/api/members/template-excel", "회원-일괄등록-템플릿.xlsx");
+  };
+
+  const uploadExcel = async (file: File) => {
+    setExcelUploading(true);
+    setError("");
+    setMessage("");
+    const formData = new FormData();
+    formData.append("file", file);
+    const res = await authFetch("/api/members/import-excel", { method: "POST", body: formData });
+    const json = (await res.json().catch(() => ({}))) as {
+      imported?: number;
+      errors?: { row: number; reason: string }[];
+      error?: string;
+      message?: string;
+    };
+    setExcelUploading(false);
+    if (!res.ok) {
+      setError(json.message ?? json.error ?? "엑셀 업로드 실패");
+      return;
+    }
+    setMessage(`엑셀 업로드 완료: ${json.imported ?? 0}명 등록`);
+    if ((json.errors ?? []).length > 0) {
+      setError(
+        `일부 실패: ${json.errors!
+          .slice(0, 5)
+          .map((item) => `#${item.row} ${item.reason}`)
+          .join(", ")}`
+      );
+    }
+    await loadStudents();
+  };
+
+  const sendPaymentLinksToSelected = async () => {
+    if (checkedIds.length === 0) {
+      setError("결제링크 발송할 회원을 먼저 선택해 주세요.");
+      return;
+    }
+    setError("");
+    const res = await authFetch("/api/payments/send-bulk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        memberIds: checkedIds,
+        month: activeMonth,
+        channel: "kakao",
+      }),
+    });
+    const json = (await res.json().catch(() => ({}))) as { sent?: number; failed?: number; error?: string };
+    if (!res.ok) {
+      setError(json.error ?? "결제링크 일괄 발송 실패");
+      return;
+    }
+    setMessage(`결제링크 발송 완료: 성공 ${json.sent ?? 0}, 실패 ${json.failed ?? 0}`);
+  };
+
+  const sendAnnouncement = async () => {
+    if (!announcementId) {
+      setError("발송할 안내를 선택해 주세요.");
+      return;
+    }
+    const targetIds = checkedIds.length > 0 ? checkedIds : students.map((s) => s.id);
+    if (targetIds.length === 0) {
+      setError("안내를 보낼 회원이 없습니다.");
+      return;
+    }
+    setError("");
+    const res = await authFetch("/api/announcements/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ announcementId, memberIds: targetIds, channel: "kakao" }),
+    });
+    const json = (await res.json().catch(() => ({}))) as {
+      sentCount?: number;
+      failCount?: number;
+      error?: string;
+    };
+    if (!res.ok) {
+      setError(json.error ?? "안내 발송 실패");
+      return;
+    }
+    setMessage(
+      `안내 발송 완료 (카카오톡): 대상 ${targetIds.length}명, 성공 ${json.sentCount ?? 0}, 실패 ${json.failCount ?? 0}`
+    );
+  };
+
+  const sendAnnouncementToOne = async (memberId: string) => {
+    if (!announcementId) {
+      setError("발송할 안내를 선택해 주세요.");
+      return;
+    }
+    setError("");
+    const res = await authFetch("/api/announcements/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ announcementId, memberIds: [memberId], channel: "kakao" }),
+    });
+    const json = (await res.json().catch(() => ({}))) as {
+      sentCount?: number;
+      failCount?: number;
+      error?: string;
+    };
+    if (!res.ok) {
+      setError(json.error ?? "안내 발송 실패");
+      return;
+    }
+    setMessage(`안내 발송 완료 (카카오톡): 대상 1명, 성공 ${json.sentCount ?? 0}, 실패 ${json.failCount ?? 0}`);
+  };
+
+  const sendSmsBulk = async () => {
+    if (!smsText.trim()) {
+      setError("보낼 문자 내용을 입력해 주세요.");
+      return;
+    }
+    const targetIds = checkedIds.length > 0 ? checkedIds : students.map((s) => s.id);
+    if (targetIds.length === 0) {
+      setError("문자를 보낼 회원이 없습니다.");
+      return;
+    }
+    setError("");
+    const res = await authFetch("/api/sms/enqueue-bulk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ memberIds: targetIds, message: smsText }),
+    });
+    const json = (await res.json().catch(() => ({}))) as {
+      requested?: number;
+      enqueued?: number;
+      error?: string;
+    };
+    if (!res.ok) {
+      setError(json.error ?? "문자 큐 등록 실패");
+      return;
+    }
+    setMessage(
+      `안드로이드 폰 문자 큐 등록 완료: 요청 ${json.requested ?? targetIds.length}명 중 ${json.enqueued ?? 0}명 대기열 추가`
+    );
+  };
+
+  const deleteStudent = async (studentId: string, studentName: string) => {
+    const ok = window.confirm(
+      `${studentName} 회원을 삭제할까요?\n관련 출석/결제/수강 데이터도 함께 삭제됩니다.`
+    );
+    if (!ok) return;
+    setError("");
+    setMessage("");
+    const res = await authFetch(`/api/students/${studentId}`, { method: "DELETE" });
+    const json = (await res.json().catch(() => ({}))) as { error?: string };
+    if (!res.ok) {
+      setError(json.error ?? "회원 삭제에 실패했습니다.");
+      return;
+    }
+    setStudents((prev) => prev.filter((s) => s.id !== studentId));
+    setCheckedIds((prev) => prev.filter((id) => id !== studentId));
+    setMessage(`${studentName} 회원을 삭제했습니다.`);
+    await loadStudents();
+  };
+
+  const deleteSelectedStudents = async () => {
+    if (checkedIds.length === 0) {
+      setError("삭제할 회원을 먼저 선택해 주세요.");
+      return;
+    }
+    const ok = window.confirm(
+      `선택한 ${checkedIds.length}명을 삭제할까요?\n관련 출석/결제/수강 데이터도 함께 삭제됩니다.`
+    );
+    if (!ok) return;
+    setError("");
+    setMessage("");
+    const res = await authFetch("/api/students", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ memberIds: checkedIds }),
+    });
+    const json = (await res.json().catch(() => ({}))) as {
+      error?: string;
+      deleted?: number;
+      failed?: number;
+    };
+    if (!res.ok) {
+      setError(json.error ?? "선택 회원 삭제에 실패했습니다.");
+      return;
+    }
+    const removed = new Set(checkedIds);
+    setStudents((prev) => prev.filter((s) => !removed.has(s.id)));
+    setCheckedIds([]);
+    setMessage(
+      `선택 회원 삭제 완료: ${json.deleted ?? 0}명 삭제${(json.failed ?? 0) > 0 ? `, ${json.failed}명 실패` : ""}`
+    );
+    await loadStudents();
+  };
+
   useEffect(() => {
     void loadClasses();
+    void loadAnnouncements();
     void loadLogs();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -313,6 +554,21 @@ export default function StudentsPage() {
     void loadStudents();
   };
 
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const smsQrConfig =
+    supabaseUrl && supabaseKey
+      ? {
+          type: "sms_gateway_config",
+          supabaseUrl,
+          supabaseKey,
+          projectName: "학원 관리 시스템",
+          deviceName: "원장님폰-1",
+        }
+      : null;
+  const smsQrText = smsQrConfig ? JSON.stringify(smsQrConfig) : "";
+  const selectedStudents = students.filter((s) => checkedIds.includes(s.id));
+
   return (
     <main className="mx-auto flex w-full max-w-[1500px] flex-col gap-5 px-4 py-8">
       <h1 className="text-2xl font-semibold">회원 관리 통합 운영</h1>
@@ -339,6 +595,117 @@ export default function StudentsPage() {
               {row.className} ({row.count}명)
             </button>
           ))}
+        </div>
+      </section>
+
+      <section className="grid gap-3 rounded-xl border p-4 dark:border-zinc-800 md:grid-cols-5">
+        <div className="md:col-span-2">
+          <h2 className="text-sm font-semibold">회원 일괄 등록/다운로드</h2>
+          <p className="mt-1 text-xs opacity-75">
+            기존처럼 템플릿 기반 엑셀 일괄등록과 현재 조건 목록 다운로드를 사용할 수 있습니다.
+          </p>
+        </div>
+        <label className="flex cursor-pointer items-center justify-center rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700">
+          {excelUploading ? "업로드 중..." : "엑셀 파일 업로드"}
+          <input
+            type="file"
+            accept=".xlsx,.xls"
+            className="hidden"
+            disabled={excelUploading}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) void uploadExcel(file);
+              e.currentTarget.value = "";
+            }}
+          />
+        </label>
+        <button
+          type="button"
+          onClick={() => void downloadTemplateExcel()}
+          className="rounded border border-zinc-300 px-3 py-2 dark:border-zinc-700"
+        >
+          템플릿 다운로드
+        </button>
+        <button
+          type="button"
+          onClick={() => void downloadExcel()}
+          className="rounded border border-zinc-300 px-3 py-2 dark:border-zinc-700"
+        >
+          현재 목록 엑셀 다운로드
+        </button>
+      </section>
+
+      <section className="rounded-xl border p-4 dark:border-zinc-800">
+        <h2 className="text-sm font-semibold">문자 큐 · 카카오톡 안내 발송</h2>
+        <p className="mt-1 text-xs opacity-75">
+          체크한 회원이 있으면 선택 회원만, 없으면 현재 목록 전체에게 발송합니다. 문자는 Supabase sms_queue에 쌓이며 안드로이드 폰 앱이 가져갑니다.
+        </p>
+        <div className="mt-4 flex flex-col gap-4 lg:flex-row lg:items-stretch">
+          <div className="h-28 w-full max-w-xs rounded border border-zinc-300 px-3 py-2 text-xs dark:border-zinc-700">
+            <p className="mb-1 font-semibold">선택된 회원</p>
+            {selectedStudents.length === 0 ? (
+              <p className="text-zinc-500">체크된 회원이 없으면 목록 전체가 대상입니다.</p>
+            ) : (
+              <ul className="flex max-h-20 flex-wrap gap-1 overflow-y-auto">
+                {selectedStudents.map((s) => (
+                  <li
+                    key={s.id}
+                    className="rounded bg-zinc-100 px-1.5 py-0.5 text-[11px] dark:bg-zinc-800"
+                  >
+                    {s.name} ({s.father_phone || s.parent_phone || s.mother_phone || s.phone})
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <textarea
+            className="h-28 w-full max-w-md rounded border border-zinc-300 bg-transparent px-3 py-2 text-sm dark:border-zinc-700"
+            placeholder="학부모에게 보낼 문자 내용…"
+            value={smsText}
+            onChange={(e) => setSmsText(e.target.value)}
+          />
+          <div className="flex w-44 flex-col gap-2">
+            <button
+              type="button"
+              onClick={() => void sendSmsBulk()}
+              className="rounded bg-zinc-900 px-3 py-2 text-sm text-white dark:bg-zinc-100 dark:text-zinc-900"
+            >
+              문자 큐 등록
+            </button>
+            {smsQrConfig ? (
+              <div className="flex flex-1 items-center justify-center rounded border border-dashed border-zinc-300 px-1 py-1 text-[10px] dark:border-zinc-700">
+                <div className="flex flex-col items-center gap-1">
+                  <div className="rounded bg-white p-1 dark:bg-zinc-900">
+                    <QRCodeSVG value={smsQrText} size={56} includeMargin={false} />
+                  </div>
+                  <span className="text-[10px] text-zinc-500 dark:text-zinc-400">앱에서 QR 스캔</span>
+                </div>
+              </div>
+            ) : (
+              <p className="text-[10px] text-rose-500">Supabase 환경변수 미설정으로 QR 생성 불가</p>
+            )}
+          </div>
+          <div className="flex w-56 flex-col justify-between gap-2">
+            <select
+              className="rounded border border-zinc-300 bg-transparent px-2 py-1.5 text-xs dark:border-zinc-700"
+              value={announcementId}
+              onChange={(e) => setAnnouncementId(e.target.value)}
+            >
+              <option value="">카카오톡으로 보낼 안내 선택</option>
+              {announcements.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.title}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => void sendAnnouncement()}
+              className="rounded bg-zinc-900 px-3 py-2 text-xs text-white dark:bg-zinc-100 dark:text-zinc-900"
+            >
+              {checkedIds.length > 0 ? "선택 회원 안내 발송" : "현재 목록 안내 발송"}
+            </button>
+          </div>
         </div>
       </section>
 
@@ -403,12 +770,29 @@ export default function StudentsPage() {
         <button type="button" className="rounded bg-zinc-900 px-3 py-2 text-white dark:bg-zinc-100 dark:text-zinc-900" onClick={() => void applyBulkAction()}>
           선택 {checkedIds.length}명 일괄처리
         </button>
+        <button
+          type="button"
+          className="rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700"
+          onClick={() => void sendPaymentLinksToSelected()}
+        >
+          선택 회원 결제링크 발송
+        </button>
         <select className="rounded border border-zinc-300 bg-transparent px-3 py-2 dark:border-zinc-700 md:col-start-6" value={bulkPaymentStatus} onChange={(e) => setBulkPaymentStatus(e.target.value as "paid" | "pending" | "unpaid" | "refunded")}>
           <option value="paid">결제완료</option>
           <option value="pending">진행중</option>
           <option value="unpaid">미결제</option>
           <option value="refunded">환불</option>
         </select>
+      </section>
+
+      <section className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => void deleteSelectedStudents()}
+          className="rounded border border-rose-300 px-3 py-1.5 text-sm text-rose-600 hover:bg-rose-50 dark:border-rose-700 dark:hover:bg-rose-950/30"
+        >
+          선택 회원 삭제
+        </button>
       </section>
 
       <div className="overflow-x-auto rounded-xl border dark:border-zinc-800">
@@ -427,6 +811,7 @@ export default function StudentsPage() {
               <Th>월별 결제</Th>
               <Th>상태</Th>
               <Th>관리</Th>
+              <Th>안내</Th>
             </tr>
           </thead>
           <tbody>
@@ -498,12 +883,30 @@ export default function StudentsPage() {
                   </Td>
                   <Td>{statusLabel(student.status)}</Td>
                   <Td>
+                    <div className="flex flex-col gap-1">
+                      <button
+                        type="button"
+                        className="rounded border border-zinc-300 px-2 py-1 text-xs dark:border-zinc-700"
+                        onClick={() => openEditModal(student)}
+                      >
+                        수정
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded border border-rose-300 px-2 py-1 text-xs text-rose-600 dark:border-rose-700"
+                        onClick={() => void deleteStudent(student.id, student.name)}
+                      >
+                        삭제
+                      </button>
+                    </div>
+                  </Td>
+                  <Td>
                     <button
                       type="button"
                       className="rounded border border-zinc-300 px-2 py-1 text-xs dark:border-zinc-700"
-                      onClick={() => openEditModal(student)}
+                      onClick={() => void sendAnnouncementToOne(student.id)}
                     >
-                      수정
+                      안내 발송
                     </button>
                   </Td>
                 </tr>
