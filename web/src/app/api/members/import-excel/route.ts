@@ -29,6 +29,26 @@ function pick(row: InputRow, keys: string[]): string {
   return "";
 }
 
+function normalizeIsoDate(input: string): { ok: true; value: string } | { ok: false; reason: string } {
+  const raw = (input ?? "").trim();
+  if (!raw) return { ok: false, reason: "empty" };
+  const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return { ok: false, reason: "format" };
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  if (!Number.isFinite(y) || !Number.isFinite(mo) || !Number.isFinite(d)) return { ok: false, reason: "nan" };
+  if (mo < 1 || mo > 12) return { ok: false, reason: "month" };
+  if (d < 1 || d > 31) return { ok: false, reason: "day" };
+  const dt = new Date(Date.UTC(y, mo - 1, d));
+  // Ensure calendar-valid (e.g., 2026-04-31 should fail)
+  const yy = dt.getUTCFullYear();
+  const mm = dt.getUTCMonth() + 1;
+  const dd = dt.getUTCDate();
+  if (yy !== y || mm !== mo || dd !== d) return { ok: false, reason: "calendar" };
+  return { ok: true, value: raw };
+}
+
 export async function POST(request: Request) {
   const guard = await requireRole(["admin"]);
   if (!guard.ok) return guard.response;
@@ -97,6 +117,16 @@ export async function POST(request: Request) {
           ? "withdrawn"
           : "active";
 
+    let normalizedJoinDate = new Date().toISOString().slice(0, 10);
+    if (joinDate) {
+      const parsed = normalizeIsoDate(joinDate);
+      if (!parsed.ok) {
+        errors.push({ row: idx + 2, reason: `가입일(startDate/joinDate)이 올바르지 않습니다: ${joinDate}` });
+        continue;
+      }
+      normalizedJoinDate = parsed.value;
+    }
+
     const { data: student, error } = await supabaseServer
       .from("students")
       .insert({
@@ -104,7 +134,7 @@ export async function POST(request: Request) {
         phone,
         grade,
         status: mappedStatus,
-        join_date: joinDate || new Date().toISOString().slice(0, 10),
+        join_date: normalizedJoinDate,
         parent_name: parentName || null,
         parent_phone: parentPhone || null,
         father_phone: fatherPhone || null,

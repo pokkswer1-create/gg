@@ -206,14 +206,39 @@ export async function POST(request: Request) {
 
   const supabaseServer = getSupabaseServer();
   const body = await request.json();
+
+  const normalizeIsoDate = (input: unknown, fieldLabel: string) => {
+    const raw = typeof input === "string" ? input.trim() : "";
+    if (!raw) return { ok: true as const, value: null as string | null };
+    const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m) return { ok: false as const, error: `${fieldLabel} 형식이 올바르지 않습니다 (YYYY-MM-DD): ${raw}` };
+    const y = Number(m[1]);
+    const mo = Number(m[2]);
+    const d = Number(m[3]);
+    const dt = new Date(Date.UTC(y, mo - 1, d));
+    if (dt.getUTCFullYear() !== y || dt.getUTCMonth() + 1 !== mo || dt.getUTCDate() !== d) {
+      return { ok: false as const, error: `${fieldLabel} 날짜가 올바르지 않습니다: ${raw}` };
+    }
+    return { ok: true as const, value: raw };
+  };
+
+  const joinDateNorm = normalizeIsoDate(body.join_date, "가입일(join_date)");
+  if (!joinDateNorm.ok) {
+    return NextResponse.json({ error: joinDateNorm.error }, { status: 400 });
+  }
+  const birthDateNorm = normalizeIsoDate(body.birth_date, "생년월일(birth_date)");
+  if (!birthDateNorm.ok) {
+    return NextResponse.json({ error: birthDateNorm.error }, { status: 400 });
+  }
+
   const payload = {
     name: body.name,
     phone: body.phone,
     email: body.email || null,
-    birth_date: body.birth_date || null,
+    birth_date: birthDateNorm.value,
     grade: body.grade,
     status: body.status ?? "active",
-    join_date: body.join_date,
+    join_date: joinDateNorm.value ?? new Date().toISOString().slice(0, 10),
     parent_name: body.parent_name || null,
     parent_phone: body.parent_phone || null,
     father_phone: body.father_phone || null,
