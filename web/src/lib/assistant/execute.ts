@@ -9,12 +9,9 @@ import {
   formatTodayDigest,
 } from "@/lib/home/attendance-snapshot";
 import { monthKeyFromRef, type ClassifiedQuery } from "@/lib/assistant/intent";
+import { monthRange } from "@/lib/month-range";
 
 export type AssistantContext = { role: "admin" | "teacher" };
-
-function monthRange(monthKey: string) {
-  return { from: `${monthKey}-01`, to: `${monthKey}-31` };
-}
 
 function won(n: number) {
   return `${n.toLocaleString("ko-KR")}원`;

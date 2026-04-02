@@ -1,16 +1,18 @@
 import { requireRole } from "@/lib/auth/guards";
-import { monthRange } from "@/lib/month-range";
+import { monthRange, normalizeMonthKey } from "@/lib/month-range";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
 function prevMonth(monthKey: string) {
-  const d = new Date(`${monthKey}-01T00:00:00`);
+  const mk = normalizeMonthKey(monthKey);
+  const d = new Date(`${mk}-01T00:00:00`);
   d.setMonth(d.getMonth() - 1);
   return d.toISOString().slice(0, 7);
 }
 
 function last12Months(baseMonthKey: string) {
-  const base = new Date(`${baseMonthKey}-01T00:00:00`);
+  const mk = normalizeMonthKey(baseMonthKey);
+  const base = new Date(`${mk}-01T00:00:00`);
   return Array.from({ length: 12 }).map((_, idx) => {
     const d = new Date(base);
     d.setMonth(base.getMonth() - (11 - idx));
@@ -24,7 +26,7 @@ export async function GET(request: Request) {
 
   const supabaseServer = getSupabaseServer();
   const { searchParams } = new URL(request.url);
-  const monthKey = searchParams.get("month") ?? new Date().toISOString().slice(0, 7);
+  const monthKey = normalizeMonthKey(searchParams.get("month") ?? new Date().toISOString().slice(0, 7));
   const previousMonthKey = prevMonth(monthKey);
 
   const currentRange = monthRange(monthKey);
