@@ -1,5 +1,6 @@
 "use client";
 
+import { authFetch } from "@/lib/auth-fetch";
 import { useEffect, useMemo, useState } from "react";
 
 type Post = {
@@ -70,7 +71,7 @@ export default function InstagramPage() {
   }, [myPosts]);
 
   const loadMyPosts = async () => {
-    const res = await fetch("/api/instagram/posts/my");
+    const res = await authFetch("/api/instagram/posts/my");
     const json = await res.json();
     if (!res.ok) {
       setError(json.error ?? "우리 게시물 조회 실패");
@@ -80,7 +81,7 @@ export default function InstagramPage() {
   };
 
   const loadInstagramLink = async () => {
-    const res = await fetch("/api/instagram/link");
+    const res = await authFetch("/api/instagram/link");
     const json = await res.json();
     if (res.ok) {
       setInstaLink(json.link);
@@ -89,7 +90,7 @@ export default function InstagramPage() {
 
   const loadReferencePosts = async (categoryValue = category) => {
     const query = categoryValue ? `?category=${encodeURIComponent(categoryValue)}` : "";
-    const res = await fetch(`/api/instagram/reference/posts${query}`);
+    const res = await authFetch(`/api/instagram/reference/posts${query}`);
     const json = await res.json();
     if (!res.ok) {
       setError(json.error ?? "참고 게시물 조회 실패");
@@ -115,7 +116,7 @@ export default function InstagramPage() {
     if (mediaUrl) form.append("mediaUrl", mediaUrl);
     if (uploadFile) form.append("media", uploadFile);
 
-    const res = await fetch("/api/instagram/posts/create", { method: "POST", body: form });
+    const res = await authFetch("/api/instagram/posts/create", { method: "POST", body: form });
     const json = await res.json();
     if (!res.ok) {
       setError(json.error ?? "게시물 생성 실패");
@@ -131,7 +132,7 @@ export default function InstagramPage() {
   };
 
   const addReference = async () => {
-    const res = await fetch("/api/instagram/reference/add", {
+    const res = await authFetch("/api/instagram/reference/add", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ username: refUsername, category: refCategory }),
@@ -147,9 +148,9 @@ export default function InstagramPage() {
 
   const openDetail = async (postId: string) => {
     const [postRes, instaRes, internalRes] = await Promise.all([
-      fetch(`/api/instagram/posts/${postId}`),
-      fetch(`/api/instagram/posts/${postId}/insta-comments`),
-      fetch(`/api/instagram/posts/${postId}/internal-comments`),
+      authFetch(`/api/instagram/posts/${postId}`),
+      authFetch(`/api/instagram/posts/${postId}/insta-comments`),
+      authFetch(`/api/instagram/posts/${postId}/internal-comments`),
     ]);
     const postJson = await postRes.json();
     const instaJson = await instaRes.json();
@@ -165,7 +166,7 @@ export default function InstagramPage() {
 
   const addInternalComment = async () => {
     if (!detail || !newComment.trim()) return;
-    const res = await fetch(`/api/instagram/posts/${detail.id}/internal-comments`, {
+    const res = await authFetch(`/api/instagram/posts/${detail.id}/internal-comments`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ comment: newComment.trim() }),
@@ -216,7 +217,7 @@ export default function InstagramPage() {
               type="button"
               className="flex-1 rounded bg-zinc-900 px-2 py-1 text-xs text-white dark:bg-zinc-100 dark:text-zinc-900"
               onClick={async () => {
-                const res = await fetch("/api/instagram/link", {
+                const res = await authFetch("/api/instagram/link", {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({
@@ -241,7 +242,7 @@ export default function InstagramPage() {
                 type="button"
                 className="rounded border border-zinc-300 px-2 py-1 text-xs dark:border-zinc-700"
                 onClick={async () => {
-                  const res = await fetch("/api/instagram/link", { method: "DELETE" });
+                  const res = await authFetch("/api/instagram/link", { method: "DELETE" });
                   const json = await res.json();
                   if (!res.ok) {
                     setError(json.error ?? "연동 해제 실패");

@@ -1,5 +1,6 @@
 "use client";
 
+import { authFetch } from "@/lib/auth-fetch";
 import { useEffect, useState } from "react";
 
 type ClassItem = { id: string; name: string };
@@ -64,7 +65,7 @@ export default function AnnouncementsAdminPage() {
   const [message, setMessage] = useState("");
 
   const loadClasses = async () => {
-    const res = await fetch("/api/classes");
+    const res = await authFetch("/api/classes");
     const json = await res.json();
     if (!res.ok) {
       setError(json.error ?? "클래스 목록 조회 실패");
@@ -78,7 +79,7 @@ export default function AnnouncementsAdminPage() {
   };
 
   const loadAnnouncements = async () => {
-    const res = await fetch("/api/announcements");
+    const res = await authFetch("/api/announcements");
     const json = await res.json();
     if (!res.ok) {
       setError(json.error ?? "안내 목록 조회 실패");
@@ -96,7 +97,7 @@ export default function AnnouncementsAdminPage() {
   }, []);
 
   const fillFromAnnouncement = async (id: string) => {
-    const res = await fetch(`/api/announcements/${id}`);
+    const res = await authFetch(`/api/announcements/${id}`);
     const json = await res.json();
     if (!res.ok) {
       setError(json.error ?? "상세 조회 실패");
@@ -141,7 +142,7 @@ export default function AnnouncementsAdminPage() {
       kakaoGroupUrls: form.kakaoGroupUrls.filter((x) => x.title || x.url),
       preparationItems: form.preparationItems.filter(Boolean),
     };
-    const res = await fetch("/api/announcements/save", {
+    const res = await authFetch("/api/announcements/save", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -162,7 +163,7 @@ export default function AnnouncementsAdminPage() {
     if (!form.id) return;
     const ok = window.confirm("이 안내를 비활성화하시겠습니까?");
     if (!ok) return;
-    const res = await fetch(`/api/announcements/${form.id}`, { method: "DELETE" });
+    const res = await authFetch(`/api/announcements/${form.id}`, { method: "DELETE" });
     const json = await res.json();
     if (!res.ok) {
       setError(json.error ?? "삭제 실패");

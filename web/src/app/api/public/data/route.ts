@@ -2,6 +2,9 @@ import { defaultAcademySettings } from "@/lib/parent-site/defaults";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 const SETTING_KEYS = [
   "site_branding",
   "tuition",
@@ -51,10 +54,19 @@ export async function GET() {
       });
     }
 
-    return NextResponse.json({
-      settings,
-      notices: notices ?? [],
-    });
+    return NextResponse.json(
+      {
+        settings,
+        notices: notices ?? [],
+      },
+      {
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
+          Pragma: "no-cache",
+          Expires: "0",
+        },
+      }
+    );
   } catch (e) {
     const message = e instanceof Error ? e.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });

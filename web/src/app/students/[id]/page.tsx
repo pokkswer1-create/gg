@@ -1,5 +1,6 @@
 "use client";
 
+import { authFetch } from "@/lib/auth-fetch";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
@@ -9,6 +10,9 @@ type StudentDetail = {
   grade: string;
   phone: string;
   parent_name: string | null;
+  parent_phone: string | null;
+  father_phone: string | null;
+  mother_phone: string | null;
   status: string;
   enrollments: Array<{
     id: string;
@@ -48,7 +52,7 @@ export default function StudentDetailPage({
   useEffect(() => {
     const run = async () => {
       const { id } = await params;
-      const res = await fetch(`/api/students/${id}`);
+      const res = await authFetch(`/api/students/${id}`);
       const json = await res.json();
       if (!res.ok) {
         setError(json.error ?? "Failed to load student details.");
@@ -95,6 +99,9 @@ export default function StudentDetailPage({
         <p>학년: {student.grade}</p>
         <p>연락처: {student.phone}</p>
         <p>학부모: {student.parent_name ?? "-"}</p>
+        <p>학부모 연락처: {student.parent_phone ?? "-"}</p>
+        <p>부 연락처: {student.father_phone ?? "-"}</p>
+        <p>모 연락처: {student.mother_phone ?? "-"}</p>
         <p>상태: {student.status}</p>
         <p>출석률: {attendanceRate}%</p>
       </section>

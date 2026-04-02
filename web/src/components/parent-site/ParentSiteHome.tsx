@@ -29,6 +29,18 @@ type ClassOption = {
   makeupCapacity: number;
 };
 
+type CustomClassPrice = {
+  class_name?: string;
+  week1_price?: number;
+  week2_price?: number;
+  week3_price?: number;
+  elite_price?: number;
+  tryout_price?: number;
+  shuttle_fee?: number;
+  discount_percent?: number;
+  discount_won?: number;
+};
+
 function previewText(htmlOrText: string, max = 72): string {
   const t = htmlOrText.replace(/<[^>]+>/g, "").trim();
   return t.length <= max ? t : `${t.slice(0, max)}…`;
@@ -36,6 +48,12 @@ function previewText(htmlOrText: string, max = 72): string {
 
 function won(n: number) {
   return `${n.toLocaleString("ko-KR")}원`;
+}
+
+function applyDiscount(base: number, discountPercent = 0, discountWon = 0) {
+  const pct = Math.min(100, Math.max(0, Number(discountPercent) || 0));
+  const wonDiscount = Math.max(0, Number(discountWon) || 0);
+  return Math.max(0, Math.round((Number(base) || 0) - ((Number(base) || 0) * pct) / 100 - wonDiscount));
 }
 
 export function ParentSiteHome() {
@@ -48,7 +66,10 @@ export function ParentSiteHome() {
   const load = useCallback(async () => {
     setLoadError("");
     try {
-      const res = await fetch("/api/public/data");
+      const res = await fetch(`/api/public/data?_ts=${Date.now()}`, {
+        cache: "no-store",
+        headers: { "cache-control": "no-cache" },
+      });
       const json = await res.json();
       if (!res.ok) {
         setLoadError(json.error ?? "데이터를 불러오지 못했습니다.");
@@ -64,10 +85,15 @@ export function ParentSiteHome() {
   }, []);
 
   useEffect(() => {
-    void load();
+    const timer = window.setTimeout(() => {
+      void load();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [load]);
 
   const tuition = settings.tuition as typeof defaultAcademySettings.tuition | undefined;
+  const customClasses = ((settings.tuition as { custom_classes?: CustomClassPrice[] } | undefined)?.custom_classes ??
+    []) as CustomClassPrice[];
   const preparation = (settings.preparation_items as string[]) ?? defaultAcademySettings.preparation_items;
   const shuttle = (settings.shuttle_info as Record<string, string>) ?? defaultAcademySettings.shuttle_info;
   const payment = (settings.payment_guide as Record<string, string>) ?? defaultAcademySettings.payment_guide;
@@ -152,6 +178,47 @@ export function ParentSiteHome() {
           <PricingBlock title="90분 클래스" tuition={tuition?.["90min"]} />
           <PricingElite elite={tuition?.elite} />
           <PricingAdult adult={tuition?.adult} />
+          {customClasses.length > 0 ? (
+            <div className="mb-4">
+              <h3 className="mb-3 text-base font-semibold">반별 상세 요금</h3>
+              <table className="w-full border-collapse text-[13px]">
+                <thead>
+                  <tr className="bg-[#0095f6] text-left text-white">
+                    <th className="p-2">반이름</th>
+                    <th className="p-2">주1회</th>
+                    <th className="p-2">주2회</th>
+                    <th className="p-2">주3회</th>
+                    <th className="p-2">할인적용(주2)</th>
+                    <th className="p-2">대표팀</th>
+                    <th className="p-2">트라이아웃</th>
+                    <th className="p-2">셔틀비</th>
+                    <th className="p-2">할인(%)</th>
+                    <th className="p-2">할인(원)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {customClasses.map((row, idx) => (
+                    <tr key={`${row.class_name ?? "class"}-${idx}`} className="border-b border-[#e0e0e0]">
+                      <td className="p-2">{row.class_name ?? "-"}</td>
+                      <td className="p-2">{row.week1_price ? won(row.week1_price) : "-"}</td>
+                      <td className="p-2">{row.week2_price ? won(row.week2_price) : "-"}</td>
+                      <td className="p-2">{row.week3_price ? won(row.week3_price) : "-"}</td>
+                      <td className="p-2">
+                        {row.week2_price
+                          ? won(applyDiscount(row.week2_price, row.discount_percent, row.discount_won))
+                          : "-"}
+                      </td>
+                      <td className="p-2">{row.elite_price ? won(row.elite_price) : "-"}</td>
+                      <td className="p-2">{row.tryout_price ? won(row.tryout_price) : "-"}</td>
+                      <td className="p-2">{row.shuttle_fee ? won(row.shuttle_fee) : "-"}</td>
+                      <td className="p-2">{row.discount_percent ? `${row.discount_percent}%` : "-"}</td>
+                      <td className="p-2">{row.discount_won ? won(row.discount_won) : "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
         </section>
 
         <section id="info" className="rounded-lg bg-white p-6 shadow-sm md:p-8">

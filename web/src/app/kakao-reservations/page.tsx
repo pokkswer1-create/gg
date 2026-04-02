@@ -1,5 +1,6 @@
 "use client";
 
+import { authFetch } from "@/lib/auth-fetch";
 import { useEffect, useMemo, useState } from "react";
 
 type Reservation = {
@@ -22,7 +23,7 @@ export default function KakaoReservationsPage() {
   const [message, setMessage] = useState("");
 
   const loadReservations = async (status = tab) => {
-    const res = await fetch(`/api/kakao-reservations?status=${status}`);
+    const res = await authFetch(`/api/kakao-reservations?status=${status}`);
     const json = await res.json();
     if (!res.ok) {
       setError(json.message ?? "예약 목록을 불러오지 못했습니다.");
@@ -44,7 +45,7 @@ export default function KakaoReservationsPage() {
   }, [reservations]);
 
   const doAction = async (url: string, body?: object, success?: string) => {
-    const res = await fetch(url, {
+    const res = await authFetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body ?? {}),

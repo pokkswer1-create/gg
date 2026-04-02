@@ -1,6 +1,6 @@
 import { requireRole } from "@/lib/auth/guards";
 import { getSupabaseServer } from "@/lib/supabase/server";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 export async function GET() {
   const guard = await requireRole(["admin", "teacher"]);
@@ -20,7 +20,7 @@ export async function GET() {
   return NextResponse.json({ link: data ?? null });
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   const guard = await requireRole(["admin", "teacher"]);
   if (!guard.ok) return guard.response;
 

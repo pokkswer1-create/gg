@@ -1,6 +1,7 @@
 "use client";
 
 import type { AttendanceStatus } from "@/lib/types";
+import { authFetch } from "@/lib/auth-fetch";
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 
 type StudentOption = { id: string; name: string };
@@ -36,9 +37,9 @@ export default function AttendancePage() {
 
   const loadData = async () => {
     const [classesRes, studentsRes, recordsRes] = await Promise.all([
-      fetch("/api/classes"),
-      fetch("/api/students?status=active&sort=name.asc"),
-      fetch(`/api/attendance?month=${month}`),
+      authFetch("/api/classes"),
+      authFetch("/api/students?status=active&sort=name.asc"),
+      authFetch(`/api/attendance?month=${month}`),
     ]);
     const classesJson = await classesRes.json();
     const studentsJson = await studentsRes.json();
@@ -76,7 +77,7 @@ export default function AttendancePage() {
   const saveAttendance = async (event: FormEvent) => {
     event.preventDefault();
     setError("");
-    const res = await fetch("/api/attendance", {
+    const res = await authFetch("/api/attendance", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -112,7 +113,7 @@ export default function AttendancePage() {
       memberId: student.id,
       status: bulkStatuses[student.id] ?? "present",
     }));
-    const res = await fetch("/api/attendance", {
+    const res = await authFetch("/api/attendance", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

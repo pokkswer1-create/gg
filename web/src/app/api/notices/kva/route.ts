@@ -13,9 +13,11 @@ export async function GET() {
     .select("id, title, link, original_date, author, scraped_at")
     .eq("source", "KVA")
     .eq("is_active", true)
+    .ilike("link", "%/user/usr11Board/%")
+    .ilike("link", "%p_idNm=notice%")
     .order("original_date", { ascending: false, nullsFirst: false })
     .order("scraped_at", { ascending: false })
-    .limit(10);
+    .limit(5);
 
   if (error) {
     // 스키마 미적용 초기 상태에서는 에러 대신 빈 목록을 반환해 UI를 깨지 않게 한다.

@@ -1,5 +1,6 @@
 "use client";
 
+import { authFetch } from "@/lib/auth-fetch";
 import { useEffect, useMemo, useState } from "react";
 
 type RouteItem = {
@@ -89,7 +90,7 @@ export default function ShuttlePage() {
   });
 
   const loadRoutes = async () => {
-    const res = await fetch(`/api/shuttle/routes?day=${encodeURIComponent(selectedDay)}`);
+    const res = await authFetch(`/api/shuttle/routes?day=${encodeURIComponent(selectedDay)}`);
     const json = await res.json();
     if (!res.ok) {
       setError(json.error ?? "셔틀 노선 조회 실패");
@@ -99,19 +100,19 @@ export default function ShuttlePage() {
   };
 
   const loadStudents = async () => {
-    const res = await fetch("/api/students?status=active&sort=name.asc");
+    const res = await authFetch("/api/students?status=active&sort=name.asc");
     const json = await res.json();
     if (res.ok) setStudents(json.data ?? []);
   };
 
   const loadDrivers = async () => {
-    const res = await fetch("/api/shuttle/drivers");
+    const res = await authFetch("/api/shuttle/drivers");
     const json = await res.json();
     if (res.ok) setDrivers(json ?? []);
   };
 
   const loadStats = async () => {
-    const res = await fetch(
+    const res = await authFetch(
       `/api/shuttle/stats?startDate=${range.startDate}&endDate=${range.endDate}`
     );
     const json = await res.json();
@@ -141,7 +142,7 @@ export default function ShuttlePage() {
     }
     setExpandedRouteId(routeId);
     if (!todayData[routeId]) {
-      const res = await fetch(`/api/shuttle/routes/${routeId}/today?date=${todayKey}`);
+      const res = await authFetch(`/api/shuttle/routes/${routeId}/today?date=${todayKey}`);
       const json = await res.json();
       if (!res.ok) {
         setError(json.error ?? "탑승 현황 조회 실패");
@@ -152,7 +153,7 @@ export default function ShuttlePage() {
   };
 
   const createRoute = async () => {
-    const res = await fetch("/api/shuttle/routes/create", {
+    const res = await authFetch("/api/shuttle/routes/create", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -174,7 +175,7 @@ export default function ShuttlePage() {
   };
 
   const addStudentToRoute = async () => {
-    const res = await fetch("/api/shuttle/students/add", {
+    const res = await authFetch("/api/shuttle/students/add", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -208,7 +209,7 @@ export default function ShuttlePage() {
     });
     await loadRoutes();
     if (expandedRouteId) {
-      const res2 = await fetch(`/api/shuttle/routes/${expandedRouteId}/today?date=${todayKey}`);
+      const res2 = await authFetch(`/api/shuttle/routes/${expandedRouteId}/today?date=${todayKey}`);
       if (res2.ok) {
         const json2 = await res2.json();
         setTodayData((prev) => ({ ...prev, [expandedRouteId]: json2 }));
@@ -219,7 +220,7 @@ export default function ShuttlePage() {
   const recordBoarding = async (registrationId: string, hasBoarded: boolean) => {
     const now = new Date();
     const arrival = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-    const res = await fetch("/api/shuttle/attendance/record", {
+    const res = await authFetch("/api/shuttle/attendance/record", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -235,13 +236,13 @@ export default function ShuttlePage() {
       return;
     }
     if (!expandedRouteId) return;
-    const res2 = await fetch(`/api/shuttle/routes/${expandedRouteId}/today?date=${todayKey}`);
+    const res2 = await authFetch(`/api/shuttle/routes/${expandedRouteId}/today?date=${todayKey}`);
     const json2 = await res2.json();
     if (res2.ok) setTodayData((prev) => ({ ...prev, [expandedRouteId]: json2 }));
   };
 
   const addDriver = async () => {
-    const res = await fetch("/api/shuttle/drivers/create", {
+    const res = await authFetch("/api/shuttle/drivers/create", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(newDriver),

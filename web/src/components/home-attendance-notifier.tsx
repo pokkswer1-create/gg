@@ -122,9 +122,14 @@ export function HomeAttendanceNotifier() {
 
   useEffect(() => {
     if (!enabled) return;
-    void runNotifications();
+    const initialTimer = window.setTimeout(() => {
+      void runNotifications();
+    }, 0);
     const t = window.setInterval(() => void runNotifications(), 60_000);
-    return () => window.clearInterval(t);
+    return () => {
+      window.clearTimeout(initialTimer);
+      window.clearInterval(t);
+    };
   }, [enabled, runNotifications]);
 
   const requestEnable = async () => {

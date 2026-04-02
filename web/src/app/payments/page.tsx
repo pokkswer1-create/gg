@@ -1,5 +1,6 @@
 "use client";
 
+import { authFetch } from "@/lib/auth-fetch";
 import { mockPaymentProvider } from "@/lib/providers/payment/mock";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
@@ -9,6 +10,8 @@ type StudentLite = {
   grade: string;
   parent_name: string | null;
   parent_phone: string | null;
+  father_phone?: string | null;
+  mother_phone?: string | null;
 };
 
 type PaymentItem = {
@@ -49,8 +52,8 @@ export default function PaymentsPage() {
     if (instructorFilter) paymentParams.set("instructor", instructorFilter);
 
     const [paymentsRes, studentsRes] = await Promise.all([
-      fetch(`/api/payments?${paymentParams.toString()}`),
-      fetch("/api/students?status=active&sort=name.asc"),
+      authFetch(`/api/payments?${paymentParams.toString()}`),
+      authFetch("/api/students?status=active&sort=name.asc"),
     ]);
     const paymentsJson = await paymentsRes.json();
     const studentsJson = await studentsRes.json();
@@ -71,7 +74,7 @@ export default function PaymentsPage() {
     if (!selectedStudent) return;
     setError("");
     setMessage("");
-    const res = await fetch("/api/payments", {
+    const res = await authFetch("/api/payments", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -92,7 +95,7 @@ export default function PaymentsPage() {
   };
 
   const markPaid = async (item: PaymentItem) => {
-    const res = await fetch(`/api/payments/${item.id}`, {
+    const res = await authFetch(`/api/payments/${item.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -135,7 +138,7 @@ export default function PaymentsPage() {
       setError("선택된 회원이 없습니다.");
       return;
     }
-    const res = await fetch("/api/payments/send-bulk", {
+    const res = await authFetch("/api/payments/send-bulk", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ memberIds: checkedIds, month, channel: "kakao" }),

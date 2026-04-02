@@ -1,6 +1,7 @@
 "use client";
 
 import type { AcademyClass, Student } from "@/lib/types";
+import { authFetch } from "@/lib/auth-fetch";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 
 type ClassWithEnrollments = AcademyClass & {
@@ -59,8 +60,8 @@ export default function ClassesPage() {
   const loadData = async () => {
     setError("");
     const [classesRes, studentsRes] = await Promise.all([
-      fetch("/api/classes"),
-      fetch("/api/students?sort=name.asc"),
+      authFetch("/api/classes"),
+      authFetch("/api/students?sort=name.asc"),
     ]);
     const classesJson = await classesRes.json();
     const studentsJson = await studentsRes.json();
@@ -81,7 +82,7 @@ export default function ClassesPage() {
     event.preventDefault();
     setError("");
     setMessage("");
-    const res = await fetch("/api/classes", {
+    const res = await authFetch("/api/classes", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -108,7 +109,7 @@ export default function ClassesPage() {
     }
     setError("");
     setMessage("");
-    const res = await fetch("/api/enrollments", {
+    const res = await authFetch("/api/enrollments", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ class_id: selectedClass, student_id: selectedStudent }),
@@ -139,7 +140,7 @@ export default function ClassesPage() {
   const removeEnrollment = async (enrollmentId: string) => {
     setError("");
     setMessage("");
-    const res = await fetch(`/api/enrollments?id=${enrollmentId}`, { method: "DELETE" });
+    const res = await authFetch(`/api/enrollments?id=${enrollmentId}`, { method: "DELETE" });
     const json = await res.json();
     if (!res.ok) {
       setError(json.error ?? "수강 해제에 실패했습니다.");
@@ -173,7 +174,7 @@ export default function ClassesPage() {
     if (!editingClassId) return;
     setError("");
     setMessage("");
-    const res = await fetch(`/api/classes/${editingClassId}`, {
+    const res = await authFetch(`/api/classes/${editingClassId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(editForm),
@@ -197,7 +198,7 @@ export default function ClassesPage() {
     if (!ok) return;
     setError("");
     setMessage("");
-    const res = await fetch(`/api/classes/${classId}`, { method: "DELETE" });
+    const res = await authFetch(`/api/classes/${classId}`, { method: "DELETE" });
     const json = await res.json();
     if (!res.ok) {
       setError(json.error ?? "수업 삭제에 실패했습니다.");
@@ -219,7 +220,7 @@ export default function ClassesPage() {
 
     setError("");
     setMessage("");
-    const res = await fetch(`/api/classes/${klass.id}/status`, {
+    const res = await authFetch(`/api/classes/${klass.id}/status`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ class_status: nextStatus }),

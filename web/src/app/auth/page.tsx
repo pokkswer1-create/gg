@@ -2,27 +2,84 @@
 
 import { getSupabaseClient } from "@/lib/supabase/client";
 import type { Session } from "@supabase/supabase-js";
-import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import styles from "./auth.module.css";
+
+type StatusTone = "neutral" | "error" | "success";
+
+function FloatingField({
+  id,
+  label,
+  type,
+  value,
+  onChange,
+  onKeyDown,
+  hasError,
+  autoComplete,
+  staggerClass,
+}: {
+  id: string;
+  label: string;
+  type: string;
+  value: string;
+  onChange: (v: string) => void;
+  onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void;
+  hasError?: boolean;
+  autoComplete?: string;
+  staggerClass: string;
+}) {
+  return (
+    <div className={`${styles.inputWrapper} ${styles.stagger} ${staggerClass}`}>
+      <input
+        id={id}
+        className={`${styles.inputField} ${hasError ? styles.inputFieldError : ""}`}
+        type={type}
+        placeholder=" "
+        value={value}
+        autoComplete={autoComplete}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={onKeyDown}
+      />
+      <label htmlFor={id} className={styles.floatingLabel}>
+        {label}
+      </label>
+    </div>
+  );
+}
 
 export default function AuthPage() {
-  const [supabase, setSupabase] = useState<ReturnType<typeof getSupabaseClient> | null>(
-    null
-  );
+  const [mode, setMode] = useState<"login" | "signup">("login");
+  const [supabase, setSupabase] = useState<ReturnType<typeof getSupabaseClient> | null>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [fullName, setFullName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [organization, setOrganization] = useState("");
+  const [position, setPosition] = useState("");
   const [session, setSession] = useState<Session | null>(null);
   const [status, setStatus] = useState<string>("");
+  const [statusTone, setStatusTone] = useState<StatusTone>("neutral");
   const [loading, setLoading] = useState(false);
+  const [shake, setShake] = useState(false);
+  const [fieldError, setFieldError] = useState(false);
+
+  const triggerShake = useCallback(() => {
+    setShake(false);
+    requestAnimationFrame(() => setShake(true));
+  }, []);
+
+  const onShakeEnd = useCallback(() => {
+    setShake(false);
+  }, []);
 
   useEffect(() => {
     let client: ReturnType<typeof getSupabaseClient>;
     try {
       client = getSupabaseClient();
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSupabase(client);
     } catch (error) {
       setStatus((error as Error).message);
+      setStatusTone("error");
       return;
     }
 
@@ -30,13 +87,14 @@ export default function AuthPage() {
       const { data, error } = await client.auth.getSession();
       if (error) {
         setStatus(error.message);
+        setStatusTone("error");
         return;
       }
 
       setSession(data.session);
     };
 
-    loadSession();
+    void loadSession();
 
     const {
       data: { subscription },
@@ -52,24 +110,73 @@ export default function AuthPage() {
   const handleSignUp = async () => {
     setLoading(true);
     setStatus("");
+    setStatusTone("neutral");
+    setFieldError(false);
+    const safeEmail = email.trim();
+    const safeName = fullName.trim();
+    const safePhone = phone.trim();
+    const safeOrganization = organization.trim();
+    const safePosition = position.trim();
 
-    if (!supabase) {
-      setStatus("Supabase 클라이언트가 아직 준비되지 않았습니다.");
+    if (!safeName || !safePhone) {
+      setStatus("회원가입에는 이름과 연락처가 필요합니다.");
+      setStatusTone("error");
+      setFieldError(true);
+      triggerShake();
       setLoading(false);
       return;
     }
 
-    const { data, error } = await supabase.auth.signUp({ email, password });
+    if (!supabase) {
+      setStatus("Supabase 클라이언트가 아직 준비되지 않았습니다.");
+      setStatusTone("error");
+      triggerShake();
+      setLoading(false);
+      return;
+    }
+
+    const { data, error } = await supabase.auth.signUp({
+      email: safeEmail,
+      password,
+      options: {
+        data: {
+          full_name: safeName,
+          phone: safePhone,
+          organization: safeOrganization || null,
+          position: safePosition || null,
+        },
+      },
+    });
+    const token = data.session?.access_token;
+    if (!error && token) {
+      await fetch("/api/auth/register-profile", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          fullName: safeName,
+          phone: safePhone,
+          organization: safeOrganization,
+          position: safePosition,
+        }),
+      });
+    }
     setLoading(false);
 
     if (error) {
       setStatus(`회원가입 실패: ${error.message}`);
+      setStatusTone("error");
+      setFieldError(true);
+      triggerShake();
       return;
     }
 
+    setStatusTone("success");
     setStatus(
       data.user?.identities?.length
-        ? "회원가입 완료. 관리자 승인 후 로그인할 수 있습니다. (이메일 인증이 켜져 있으면 인증도 완료하세요)"
+        ? "회원가입 신청 완료. 관리자 승인 후 로그인할 수 있습니다."
         : "이미 등록된 이메일입니다. 로그인해 주세요."
     );
   };
@@ -77,18 +184,29 @@ export default function AuthPage() {
   const handleSignIn = async () => {
     setLoading(true);
     setStatus("");
+    setStatusTone("neutral");
+    setFieldError(false);
+    const safeEmail = email.trim();
 
     if (!supabase) {
       setStatus("Supabase 클라이언트가 아직 준비되지 않았습니다.");
+      setStatusTone("error");
+      triggerShake();
       setLoading(false);
       return;
     }
 
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: safeEmail,
+      password,
+    });
     setLoading(false);
 
     if (error) {
       setStatus(`로그인 실패: ${error.message}`);
+      setStatusTone("error");
+      setFieldError(true);
+      triggerShake();
       return;
     }
 
@@ -99,28 +217,59 @@ export default function AuthPage() {
       });
       const checkJson = await checkRes.json();
       if (!checkRes.ok) {
-        await supabase.auth.signOut();
-        setStatus(checkJson.error ?? "승인 상태 확인 실패");
-        return;
+        if (checkRes.status === 401 || checkRes.status === 403) {
+          await supabase.auth.signOut();
+          setStatus(checkJson.error ?? "승인 상태 확인 실패");
+          setStatusTone("error");
+          triggerShake();
+          return;
+        }
       }
-      if (!checkJson.approved) {
+      if (checkJson.approvalStatus === "PENDING") {
         await supabase.auth.signOut();
         setStatus("관리자 승인 대기중입니다. 승인 후 로그인해 주세요.");
+        setStatusTone("error");
+        triggerShake();
+        return;
+      }
+      if (checkJson.approvalStatus === "REJECTED") {
+        await supabase.auth.signOut();
+        setStatus(
+          checkJson.rejectionReason
+            ? `회원가입이 반려되었습니다. 사유: ${checkJson.rejectionReason}`
+            : "회원가입이 반려되었습니다. 관리자에게 문의해 주세요."
+        );
+        setStatusTone("error");
+        triggerShake();
         return;
       }
     }
 
     localStorage.setItem("kva-refresh-once", "1");
+    setStatusTone("success");
     setStatus("로그인 완료. 대시보드로 이동합니다.");
     window.location.href = "/dashboard";
+  };
+
+  const handleLoginEnter = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (mode !== "login") return;
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    if (!loading) {
+      void handleSignIn();
+    }
   };
 
   const handleSignOut = async () => {
     setLoading(true);
     setStatus("");
+    setStatusTone("neutral");
+    setFieldError(false);
 
     if (!supabase) {
       setStatus("Supabase 클라이언트가 아직 준비되지 않았습니다.");
+      setStatusTone("error");
+      triggerShake();
       setLoading(false);
       return;
     }
@@ -130,131 +279,253 @@ export default function AuthPage() {
 
     if (error) {
       setStatus(`로그아웃 실패: ${error.message}`);
+      setStatusTone("error");
+      triggerShake();
       return;
     }
 
+    setStatusTone("neutral");
     setStatus("로그아웃 완료.");
   };
 
   const handleFindId = () => {
     setStatus("아이디(이메일) 찾기는 관리자에게 문의해 주세요.");
+    setStatusTone("neutral");
   };
 
   const handleResetPassword = async () => {
     if (!supabase) {
       setStatus("Supabase 클라이언트가 아직 준비되지 않았습니다.");
+      setStatusTone("error");
+      triggerShake();
       return;
     }
     if (!email.trim()) {
       setStatus("비밀번호 찾기를 위해 이메일을 먼저 입력해 주세요.");
+      setStatusTone("error");
+      triggerShake();
       return;
     }
     setLoading(true);
     setStatus("");
+    setStatusTone("neutral");
     const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
       redirectTo: `${window.location.origin}/auth`,
     });
     setLoading(false);
     if (error) {
       setStatus(`비밀번호 재설정 메일 전송 실패: ${error.message}`);
+      setStatusTone("error");
+      triggerShake();
       return;
     }
+    setStatusTone("success");
     setStatus("비밀번호 재설정 메일을 보냈습니다. 이메일을 확인해 주세요.");
   };
 
+  const switchMode = (next: "login" | "signup") => {
+    setMode(next);
+    setStatus("");
+    setStatusTone("neutral");
+    setFieldError(false);
+  };
+
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-xl flex-col justify-center gap-6 px-6 py-16">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-semibold tracking-tight">인증 관리</h1>
-        <Link className="text-sm underline opacity-80 hover:opacity-100" href="/dashboard">
-          대시보드
-        </Link>
-      </div>
+    <main className={styles.page}>
+      <div className={styles.orbPrimary} aria-hidden />
+      <div className={styles.orbSecondary} aria-hidden />
 
-      <div className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
-        <p className="text-sm">
-          상태:{" "}
-          <span className="font-medium">
-            {session ? `로그인됨 (${session.user.email})` : "로그아웃됨"}
-          </span>
-        </p>
-      </div>
+      <div
+        className={`${styles.shakeWrapper} ${shake ? styles.shakeWrapperActive : ""}`}
+        onAnimationEnd={onShakeEnd}
+      >
+        <div className={styles.loginCard}>
+          <div className={`${styles.stagger} ${styles.stagger1}`}>
+            <div className={styles.modeToggle} role="tablist" aria-label="로그인 또는 회원가입">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={mode === "login"}
+                className={mode === "login" ? styles.modeToggleActive : ""}
+                onClick={() => switchMode("login")}
+              >
+                로그인
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={mode === "signup"}
+                className={mode === "signup" ? styles.modeToggleActive : ""}
+                onClick={() => switchMode("signup")}
+              >
+                회원가입
+              </button>
+            </div>
+          </div>
 
-      <div className="grid gap-3 rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
-        <label className="grid gap-2 text-sm">
-          이메일
-          <input
-            className="rounded-md border border-zinc-300 bg-transparent px-3 py-2 outline-none focus:border-zinc-500 dark:border-zinc-700"
-            type="email"
-            placeholder="example@email.com"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
-        </label>
+          <h1 className={`${styles.title} ${styles.stagger} ${styles.stagger1}`}>
+            {mode === "signup" ? "회원가입" : "로그인"}
+          </h1>
+          <p className={`${styles.subtitle} ${styles.stagger} ${styles.stagger2}`}>
+            원패스클래스 관리자 · 강사 포털
+          </p>
 
-        <label className="grid gap-2 text-sm">
-          비밀번호
-          <input
-            className="rounded-md border border-zinc-300 bg-transparent px-3 py-2 outline-none focus:border-zinc-500 dark:border-zinc-700"
-            type="password"
-            placeholder="6자 이상"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-        </label>
+          {mode === "login" ? (
+            <div className={`${styles.stagger} ${styles.stagger2}`}>
+              <div className={styles.sessionPill}>
+                <span className={session ? styles.sessionDot : `${styles.sessionDot} ${styles.sessionDotOff}`} />
+                {session ? `로그인됨 · ${session.user.email}` : "로그아웃 상태"}
+              </div>
+            </div>
+          ) : (
+            <p className={`${styles.subtitle} ${styles.stagger} ${styles.stagger2}`} style={{ marginTop: "-0.5rem" }}>
+              이메일·비밀번호와 기본 정보를 입력해 주세요.
+            </p>
+          )}
 
-        <div className="flex flex-wrap gap-2 pt-2">
-          <button
-            className="rounded-md bg-zinc-900 px-4 py-2 text-sm text-white disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900"
-            onClick={handleSignIn}
-            disabled={loading}
-            type="button"
-          >
-            로그인
-          </button>
-          <button
-            className="rounded-md border border-zinc-300 px-4 py-2 text-sm disabled:opacity-50 dark:border-zinc-700"
-            onClick={handleSignUp}
-            disabled={loading}
-            type="button"
-          >
-            회원가입
-          </button>
-          <button
-            className="rounded-md border border-zinc-300 px-4 py-2 text-sm disabled:opacity-50 dark:border-zinc-700"
-            onClick={handleSignOut}
-            disabled={loading}
-            type="button"
-          >
-            로그아웃
-          </button>
+          <div key={mode}>
+            <FloatingField
+              id="auth-email"
+              label="이메일"
+              type="email"
+              value={email}
+              onChange={setEmail}
+              onKeyDown={handleLoginEnter}
+              hasError={fieldError}
+              autoComplete="email"
+              staggerClass={styles.stagger3}
+            />
+            <FloatingField
+              id="auth-password"
+              label="비밀번호"
+              type="password"
+              value={password}
+              onChange={setPassword}
+              onKeyDown={handleLoginEnter}
+              hasError={fieldError}
+              autoComplete={mode === "signup" ? "new-password" : "current-password"}
+              staggerClass={styles.stagger4}
+            />
+
+            {mode === "signup" ? (
+              <>
+                <FloatingField
+                  id="auth-name"
+                  label="이름"
+                  type="text"
+                  value={fullName}
+                  onChange={setFullName}
+                  staggerClass={styles.stagger5}
+                />
+                <FloatingField
+                  id="auth-phone"
+                  label="연락처"
+                  type="tel"
+                  value={phone}
+                  onChange={setPhone}
+                  autoComplete="tel"
+                  staggerClass={styles.stagger6}
+                />
+                <FloatingField
+                  id="auth-org"
+                  label="소속 (선택)"
+                  type="text"
+                  value={organization}
+                  onChange={setOrganization}
+                  staggerClass={styles.stagger7}
+                />
+                <FloatingField
+                  id="auth-position"
+                  label="직책 (선택)"
+                  type="text"
+                  value={position}
+                  onChange={setPosition}
+                  staggerClass={styles.stagger8}
+                />
+              </>
+            ) : null}
+
+            {mode === "signup" ? (
+              <div className={`${styles.buttonRow} ${styles.stagger} ${styles.stagger9}`}>
+                <button
+                  type="button"
+                  className={`${styles.primaryButton} ${loading ? styles.primaryButtonLoading : ""}`}
+                  onClick={() => void handleSignUp()}
+                  disabled={loading}
+                >
+                  {loading ? (
+                    <span className={styles.loadingInner}>
+                      <span className={styles.spinner} aria-hidden />
+                      <span className={styles.loadingText}>처리 중…</span>
+                    </span>
+                  ) : (
+                    "회원가입 완료"
+                  )}
+                </button>
+                <button
+                  type="button"
+                  className={styles.secondaryButton}
+                  onClick={() => switchMode("login")}
+                  disabled={loading}
+                >
+                  로그인으로
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className={`${styles.stagger} ${styles.stagger5}`}>
+                  <button
+                    type="button"
+                    className={`${styles.primaryButton} ${loading ? styles.primaryButtonLoading : ""}`}
+                    onClick={() => void handleSignIn()}
+                    disabled={loading}
+                  >
+                    {loading ? (
+                      <span className={styles.loadingInner}>
+                        <span className={styles.spinner} aria-hidden />
+                        <span className={styles.loadingText}>로그인 중…</span>
+                      </span>
+                    ) : (
+                      "로그인"
+                    )}
+                  </button>
+                </div>
+                <div className={`${styles.buttonRow} ${styles.stagger} ${styles.stagger6}`}>
+                  <button type="button" className={styles.secondaryButton} onClick={() => switchMode("signup")} disabled={loading}>
+                    회원가입
+                  </button>
+                  <button type="button" className={styles.secondaryButton} onClick={() => void handleSignOut()} disabled={loading}>
+                    로그아웃
+                  </button>
+                </div>
+                <div className={`${styles.linkRow} ${styles.stagger} ${styles.stagger7}`}>
+                  <button type="button" className={styles.secondaryButton} onClick={handleFindId} disabled={loading}>
+                    아이디 찾기
+                  </button>
+                  <button type="button" className={styles.secondaryButton} onClick={() => void handleResetPassword()} disabled={loading}>
+                    비밀번호 찾기
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+
+          {status ? (
+            <p
+              className={`${styles.statusMessage} ${
+                statusTone === "error"
+                  ? styles.statusError
+                  : statusTone === "success"
+                    ? styles.statusSuccess
+                    : styles.statusNeutral
+              }`}
+              role={statusTone === "error" ? "alert" : "status"}
+            >
+              {status}
+            </p>
+          ) : null}
         </div>
-
-        <div className="flex flex-wrap gap-2 pt-1">
-          <button
-            className="rounded-md border border-zinc-300 px-4 py-2 text-sm disabled:opacity-50 dark:border-zinc-700"
-            onClick={handleFindId}
-            disabled={loading}
-            type="button"
-          >
-            아이디 찾기
-          </button>
-          <button
-            className="rounded-md border border-zinc-300 px-4 py-2 text-sm disabled:opacity-50 dark:border-zinc-700"
-            onClick={handleResetPassword}
-            disabled={loading}
-            type="button"
-          >
-            비밀번호 찾기
-          </button>
-        </div>
       </div>
-
-      {status ? (
-        <p className="rounded-xl border border-zinc-200 p-4 text-sm dark:border-zinc-800">
-          {status}
-        </p>
-      ) : null}
     </main>
   );
 }

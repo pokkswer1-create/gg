@@ -1,3 +1,5 @@
+import { toApprovalStatus } from "@/lib/auth/approval-status";
+import { isBootstrapAdminEmail } from "@/lib/auth/bootstrap-admin";
 import type { UserRole } from "@/lib/types";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { createClient } from "@supabase/supabase-js";
@@ -16,7 +18,8 @@ type GuardFail = {
 };
 
 export async function requireRole(allowedRoles: UserRole[]): Promise<GuardSuccess | GuardFail> {
-  if (process.env.NEXT_PUBLIC_BYPASS_AUTH === "true") {
+  const bypassAuth = (process.env.NEXT_PUBLIC_BYPASS_AUTH ?? "").trim().toLowerCase() === "true";
+  if (bypassAuth) {
     return {
       ok: true,
       userId: "dev-bypass-user",
@@ -64,23 +67,116 @@ export async function requireRole(allowedRoles: UserRole[]): Promise<GuardSucces
   }
 
   const supabase = getSupabaseServer();
-  const { data: profile, error: profileError } = await supabase
+
+  let { data: profile, error: profileError } = await supabase
     .from("profiles")
-    .select("role, approved")
+    .select("role, approved, approval_status, rejection_reason")
     .eq("id", user.id)
-    .single();
+    .maybeSingle();
+
+  // 첫 로그인 사용자는 프로필을 자동 생성해 접근 오류를 방지
+  if (!profile && !profileError) {
+    const bootstrapAdmin = isBootstrapAdminEmail(user.email);
+    const metadata = user.user_metadata ?? {};
+    const fullName =
+      typeof metadata.full_name === "string" && metadata.full_name.trim()
+        ? metadata.full_name.trim()
+        : (user.email || "new-user").split("@")[0];
+    const phone =
+      typeof metadata.phone === "string" && metadata.phone.trim() ? metadata.phone.trim() : null;
+    const organization =
+      typeof metadata.organization === "string" && metadata.organization.trim()
+        ? metadata.organization.trim()
+        : null;
+    const position =
+      typeof metadata.position === "string" && metadata.position.trim() ? metadata.position.trim() : null;
+
+    const now = new Date().toISOString();
+    const insertPayload = {
+      id: user.id,
+      full_name: fullName,
+      email: user.email ?? null,
+      phone,
+      organization,
+      position,
+      role: bootstrapAdmin ? "admin" : "teacher",
+      approval_status: bootstrapAdmin ? "APPROVED" : "PENDING",
+      approved: bootstrapAdmin,
+      approved_at: bootstrapAdmin ? now : null,
+      reviewed_at: bootstrapAdmin ? now : null,
+      rejection_reason: null,
+    };
+
+    const created = await supabase.from("profiles").insert(insertPayload);
+    if (!created.error) {
+      profile = {
+        role: insertPayload.role,
+        approved: insertPayload.approved,
+        approval_status: insertPayload.approval_status,
+        rejection_reason: null,
+      };
+    } else {
+      profileError = created.error;
+    }
+  }
+
+  // 과거 데이터(역할 누락) 자동 복구
+  if (profile && !profile.role) {
+    const bootstrapAdmin = isBootstrapAdminEmail(user.email);
+    const nextRole: UserRole = bootstrapAdmin ? "admin" : "teacher";
+    const nextApprovalStatus =
+      typeof profile.approval_status === "string" && profile.approval_status.trim()
+        ? profile.approval_status
+        : bootstrapAdmin
+          ? "APPROVED"
+          : "PENDING";
+    const now = new Date().toISOString();
+
+    const recoveryPayload = {
+      role: nextRole,
+      approval_status: nextApprovalStatus,
+      approved: nextApprovalStatus === "APPROVED",
+      approved_at: nextApprovalStatus === "APPROVED" ? now : null,
+      reviewed_at: nextApprovalStatus === "APPROVED" ? now : null,
+    };
+
+    const recovered = await supabase
+      .from("profiles")
+      .update(recoveryPayload)
+      .eq("id", user.id)
+      .select("role, approved, approval_status, rejection_reason")
+      .maybeSingle();
+
+    if (!recovered.error && recovered.data) {
+      profile = recovered.data;
+      profileError = null;
+    } else if (recovered.error) {
+      profileError = recovered.error;
+    }
+  }
 
   if (profileError || !profile?.role) {
     return {
       ok: false,
-      response: NextResponse.json({ error: "Profile role not found" }, { status: 403 }),
+      response: NextResponse.json(
+        { error: profileError?.message ?? "프로필 권한(role) 정보가 없습니다. 관리자에게 문의해 주세요." },
+        { status: 403 }
+      ),
     };
   }
 
-  if (profile.approved === false) {
+  const approvalStatus = toApprovalStatus(profile.approval_status, profile.approved);
+  if (approvalStatus !== "APPROVED") {
+    const errorMessage =
+      approvalStatus === "REJECTED"
+        ? "회원가입이 반려되어 접근할 수 없습니다. 관리자에게 문의해 주세요."
+        : "관리자 승인 대기중입니다.";
     return {
       ok: false,
-      response: NextResponse.json({ error: "관리자 승인 대기중입니다." }, { status: 403 }),
+      response: NextResponse.json(
+        { error: errorMessage, approvalStatus, rejectionReason: profile.rejection_reason ?? null },
+        { status: 403 }
+      ),
     };
   }
 

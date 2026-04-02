@@ -1,5 +1,7 @@
 "use client";
 
+import { getSupabaseClient } from "@/lib/supabase/client";
+import { authFetch } from "@/lib/auth-fetch";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -33,8 +35,6 @@ const dropdowns: DropdownDef[] = [
       { href: "/payroll", label: "급여" },
       { href: "/expenses", label: "지출" },
       { href: "/instagram", label: "인스타" },
-      { href: "/admin/user-approvals", label: "회원승인" },
-      { href: "/auth", label: "인증" },
     ],
   },
   {
@@ -49,8 +49,6 @@ const dropdowns: DropdownDef[] = [
     id: "reservation",
     label: "예약",
     items: [
-      { href: "/naver-reservations", label: "네이버" },
-      { href: "/kakao-reservations", label: "카카오" },
       { href: "/admin/applications", label: "수업신청" },
     ],
   },
@@ -72,13 +70,11 @@ function groupActive(pathname: string, items: SubItem[]): boolean {
 export function MainNav() {
   const pathname = usePathname();
   const [openId, setOpenId] = useState<string | null>(null);
+  const [hasSession, setHasSession] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const navRef = useRef<HTMLElement>(null);
 
   const close = useCallback(() => setOpenId(null), []);
-
-  useEffect(() => {
-    close();
-  }, [pathname, close]);
 
   useEffect(() => {
     function onDoc(e: MouseEvent) {
@@ -98,6 +94,34 @@ export function MainNav() {
     return () => document.removeEventListener("keydown", onKey);
   }, []);
 
+  useEffect(() => {
+    const client = getSupabaseClient();
+    const refresh = async () => {
+      const { data } = await client.auth.getSession();
+      const session = data.session;
+      setHasSession(Boolean(session));
+      if (!session?.access_token) {
+        setIsAdmin(false);
+        return;
+      }
+      const res = await authFetch("/api/auth/access-status");
+      const json = await res.json().catch(() => ({}));
+      setIsAdmin(Boolean(res.ok && json.role === "admin"));
+    };
+
+    void refresh();
+    const { data: listener } = client.auth.onAuthStateChange(() => {
+      void refresh();
+    });
+    return () => listener.subscription.unsubscribe();
+  }, [pathname]);
+
+  const handleSignOut = async () => {
+    const client = getSupabaseClient();
+    await client.auth.signOut();
+    window.location.href = "/auth";
+  };
+
   return (
     <nav
       ref={navRef}
@@ -113,16 +137,6 @@ export function MainNav() {
           }`}
         >
           홈
-        </Link>
-        <Link
-          href="/dashboard"
-          className={`rounded-md px-2.5 py-1.5 text-sm sm:px-3 ${
-            pathname === "/dashboard"
-              ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
-              : "border border-zinc-300 dark:border-zinc-700"
-          }`}
-        >
-          대시보드
         </Link>
         <Link
           href="/calendar"
@@ -187,6 +201,29 @@ export function MainNav() {
             </div>
           );
         })}
+        <div className="ml-auto flex items-center gap-2">
+          {isAdmin ? (
+            <Link
+              href="/admin/user-approvals"
+              className={`rounded-md border px-2.5 py-1.5 text-sm sm:px-3 ${
+                pathname?.startsWith("/admin/user-approvals")
+                  ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900"
+                  : "border-zinc-300 dark:border-zinc-700"
+              }`}
+            >
+              회원승인
+            </Link>
+          ) : null}
+          {hasSession ? (
+            <button
+              type="button"
+              onClick={handleSignOut}
+              className="rounded-md border border-zinc-300 px-2.5 py-1.5 text-sm sm:px-3 dark:border-zinc-700"
+            >
+              로그아웃
+            </button>
+          ) : null}
+        </div>
       </div>
     </nav>
   );

@@ -82,7 +82,7 @@ export async function POST(request: Request) {
 
   const { data: members, error: memberError } = await supabaseServer
     .from("students")
-    .select("id, name, parent_phone, phone, email")
+    .select("id, name, father_phone, mother_phone, parent_phone, phone, email")
     .in("id", memberIds);
   if (memberError) return NextResponse.json({ error: memberError.message }, { status: 500 });
 
@@ -97,7 +97,8 @@ export async function POST(request: Request) {
 
   for (const member of members ?? []) {
     try {
-      const targetPhone: string | null = member.parent_phone || member.phone || null;
+      const targetPhone: string | null =
+        member.father_phone || member.parent_phone || member.mother_phone || member.phone || null;
 
       if (channel === "email" && member.email) {
         await mockEmailProvider.send({

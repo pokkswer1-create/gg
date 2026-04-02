@@ -12,13 +12,16 @@ export async function GET(request: Request) {
   const status = searchParams.get("status");
   const classId = searchParams.get("classId");
   const instructor = searchParams.get("instructor");
+  const page = Math.max(Number(searchParams.get("page") ?? 1), 1);
+  const pageSize = Math.min(Math.max(Number(searchParams.get("pageSize") ?? 200), 1), 500);
 
   let builder = supabaseServer
     .from("payments")
     .select(
-      "*, students(id, name, grade, parent_name, parent_phone, enrollments(class_id, classes(id, name, teacher_name)))"
+      "*, students(id, name, grade, parent_name, parent_phone, father_phone, mother_phone, enrollments(class_id, classes(id, name, teacher_name)))"
     )
     .order("created_at", { ascending: false });
+  builder = builder.range((page - 1) * pageSize, page * pageSize - 1);
 
   if (month) {
     builder = builder.eq("month_key", month);
@@ -61,6 +64,10 @@ export async function POST(request: Request) {
     amount_due: Number(body.amount_due),
     amount_paid: Number(body.amount_paid ?? 0),
     status: body.status ?? "pending",
+    payment_method: body.payment_method ?? "manual",
+    updated_by: guard.userId,
+    notes: body.notes ?? null,
+    status_changed_at: new Date().toISOString(),
     paid_at: body.paid_at ?? null,
   };
 
@@ -72,5 +79,15 @@ export async function POST(request: Request) {
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+  await supabaseServer.from("payment_change_logs").insert({
+    payment_id: data.id,
+    student_id: data.student_id,
+    actor_profile_id: guard.userId,
+    month_key: data.month_key,
+    to_status: data.status,
+    amount_due: data.amount_due,
+    amount_paid: data.amount_paid,
+    reason: body.reason ?? null,
+  });
   return NextResponse.json({ data }, { status: 201 });
 }

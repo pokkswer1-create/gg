@@ -1,5 +1,6 @@
 "use client";
 
+import { authFetch } from "@/lib/auth-fetch";
 import { useEffect, useMemo, useState } from "react";
 
 type Expense = {
@@ -23,8 +24,8 @@ export default function ExpensesPage() {
 
   const load = async () => {
     const [res1, res2] = await Promise.all([
-      fetch(`/api/expenses?month=${month}`),
-      fetch(`/api/expenses/summary?month=${month}`),
+      authFetch(`/api/expenses?month=${month}`),
+      authFetch(`/api/expenses/summary?month=${month}`),
     ]);
     const j1 = await res1.json();
     const j2 = await res2.json();
@@ -42,7 +43,7 @@ export default function ExpensesPage() {
   }, [month]);
 
   const addExpense = async () => {
-    const res = await fetch("/api/expenses/create", {
+    const res = await authFetch("/api/expenses/create", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ category, amount, description, date: `${month}-01` }),

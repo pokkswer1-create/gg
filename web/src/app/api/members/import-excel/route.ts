@@ -4,14 +4,30 @@ import * as XLSX from "xlsx";
 import { NextResponse } from "next/server";
 
 type InputRow = {
-  studentName?: string;
-  grade?: string;
-  phone?: string;
-  classId?: string;
-  startDate?: string;
-  status?: string;
-  monthlyFee?: number;
+  [key: string]: unknown;
 };
+
+function toText(v: unknown): string {
+  if (v == null) return "";
+  if (typeof v === "string") return v.trim();
+  if (typeof v === "number") return String(v);
+  return String(v).trim();
+}
+
+function toNumber(v: unknown): number {
+  if (typeof v === "number") return Number.isFinite(v) ? v : 0;
+  const raw = toText(v).replaceAll(",", "");
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function pick(row: InputRow, keys: string[]): string {
+  for (const key of keys) {
+    const value = toText(row[key]);
+    if (value) return value;
+  }
+  return "";
+}
 
 export async function POST(request: Request) {
   const guard = await requireRole(["admin"]);
@@ -28,28 +44,71 @@ export async function POST(request: Request) {
   const wb = XLSX.read(buffer, { type: "buffer" });
   const sheet = wb.Sheets[wb.SheetNames[0]];
   const rows = XLSX.utils.sheet_to_json<InputRow>(sheet, { defval: "" });
+  const { data: classes } = await supabaseServer.from("classes").select("id, name");
+  const classMap = new Map(
+    (classes ?? []).map((c) => [toText(c.name).toLowerCase(), c.id as string])
+  );
 
   let imported = 0;
   const errors: { row: number; reason: string }[] = [];
 
   for (let idx = 0; idx < rows.length; idx += 1) {
     const row = rows[idx];
-    if (!row.studentName || !row.phone || !row.grade) {
-      errors.push({ row: idx + 2, reason: "필수 컬럼 누락(studentName/phone/grade)" });
+
+    const studentName = pick(row, ["studentName", "name", "학생명", "이름"]);
+    const phone = pick(row, ["phone", "studentPhone", "휴대폰", "연락처"]);
+    const grade = pick(row, ["grade", "학년"]);
+    const joinDate = pick(row, ["startDate", "joinDate", "join_date", "가입일", "시작일"]);
+    const statusRaw = pick(row, ["status", "상태"]).toLowerCase();
+    const monthlyFeeRaw = row.monthlyFee ?? row.monthly_fee ?? row["월수강료"] ?? row["월료"];
+    const parentName = pick(row, ["parentName", "parent_name", "학부모이름", "학부모 이름"]);
+    const parentPhone = pick(row, ["parentPhone", "parent_phone", "학부모연락처", "학부모 연락처"]);
+    const fatherPhone = pick(row, ["fatherPhone", "father_phone", "부연락처", "아버지연락처"]);
+    const motherPhone = pick(row, ["motherPhone", "mother_phone", "모연락처", "어머니연락처"]);
+    const classIdRaw = pick(row, ["classId", "class_id"]);
+    const className = pick(row, ["className", "class", "반이름", "반 이름"]);
+
+    // 템플릿에 남아있는 빈 줄/서식 줄은 오류로 보지 않고 건너뜀
+    const isEffectivelyEmpty =
+      !studentName &&
+      !phone &&
+      !grade &&
+      !joinDate &&
+      !parentName &&
+      !parentPhone &&
+      !fatherPhone &&
+      !motherPhone &&
+      !classIdRaw &&
+      !className &&
+      toNumber(monthlyFeeRaw) === 0;
+    if (isEffectivelyEmpty) {
       continue;
     }
 
-    const status = (row.status || "active").toString();
-    const mappedStatus = status === "break" ? "paused" : status;
+    if (!studentName || !phone || !grade) {
+      errors.push({ row: idx + 2, reason: "필수 컬럼 누락(name/phone/grade)" });
+      continue;
+    }
+
+    const mappedStatus =
+      statusRaw === "break" || statusRaw === "paused" || statusRaw === "휴원"
+        ? "paused"
+        : statusRaw === "withdrawn" || statusRaw === "탈원"
+          ? "withdrawn"
+          : "active";
 
     const { data: student, error } = await supabaseServer
       .from("students")
       .insert({
-        name: row.studentName,
-        phone: row.phone,
-        grade: row.grade,
+        name: studentName,
+        phone,
+        grade,
         status: mappedStatus,
-        join_date: row.startDate || new Date().toISOString().slice(0, 10),
+        join_date: joinDate || new Date().toISOString().slice(0, 10),
+        parent_name: parentName || null,
+        parent_phone: parentPhone || null,
+        father_phone: fatherPhone || null,
+        mother_phone: motherPhone || null,
       })
       .select("id")
       .single();
@@ -59,12 +118,14 @@ export async function POST(request: Request) {
       continue;
     }
 
-    if (row.classId) {
+    const classId =
+      classIdRaw || (className ? (classMap.get(className.toLowerCase()) ?? "") : "");
+    if (classId) {
       await supabaseServer.from("enrollments").upsert(
         {
           student_id: student.id,
-          class_id: row.classId,
-          monthly_fee: Number(row.monthlyFee ?? 0),
+          class_id: classId,
+          monthly_fee: toNumber(monthlyFeeRaw),
         },
         { onConflict: "student_id,class_id" }
       );

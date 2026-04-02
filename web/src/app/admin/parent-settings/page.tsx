@@ -7,6 +7,46 @@ import { useCallback, useEffect, useState } from "react";
 
 type Tab = "branding" | "preparation" | "shuttle" | "payment" | "makeup" | "refund" | "tuition" | "notices";
 
+type TuitionForm = {
+  min60_1week: number;
+  min60_2week: number;
+  min60_fee: number;
+  min60_kit: string;
+  min90_1week: number;
+  min90_2week: number;
+  min90_fee: number;
+  min90_kit: string;
+  elite_monthly: number;
+  elite_fee: number;
+  elite_kit: string;
+  adult_evening: number;
+  adult_morning: number;
+};
+
+type CustomClassPrice = {
+  class_name: string;
+  week1_price: number;
+  week2_price: number;
+  week3_price: number;
+  elite_price: number;
+  tryout_price: number;
+  shuttle_fee: number;
+  discount_percent: number;
+  discount_won: number;
+};
+
+function toWonText(value: number) {
+  return `${Math.max(0, Math.round(value)).toLocaleString("ko-KR")}원`;
+}
+
+function applyDiscount(base: number, discountPercent: number, discountWon: number) {
+  const safeBase = Number.isFinite(base) ? base : 0;
+  const pct = Math.min(100, Math.max(0, Number.isFinite(discountPercent) ? discountPercent : 0));
+  const won = Math.max(0, Number.isFinite(discountWon) ? discountWon : 0);
+  const discounted = safeBase - (safeBase * pct) / 100 - won;
+  return Math.max(0, Math.round(discounted));
+}
+
 export default function ParentSettingsPage() {
   const [tab, setTab] = useState<Tab>("branding");
   const [loading, setLoading] = useState(true);
@@ -27,9 +67,34 @@ export default function ParentSettingsPage() {
   const [refundJson, setRefundJson] = useState(
     JSON.stringify(defaultAcademySettings.refund_policy, null, 2)
   );
-  const [tuitionJson, setTuitionJson] = useState(
-    JSON.stringify(defaultAcademySettings.tuition, null, 2)
-  );
+  const [tuitionForm, setTuitionForm] = useState<TuitionForm>({
+    min60_1week: Number(defaultAcademySettings.tuition["60min"]["1week"] ?? 0),
+    min60_2week: Number(defaultAcademySettings.tuition["60min"]["2week"] ?? 0),
+    min60_fee: Number(defaultAcademySettings.tuition["60min"].fee ?? 0),
+    min60_kit: String(defaultAcademySettings.tuition["60min"].kit ?? ""),
+    min90_1week: Number(defaultAcademySettings.tuition["90min"]["1week"] ?? 0),
+    min90_2week: Number(defaultAcademySettings.tuition["90min"]["2week"] ?? 0),
+    min90_fee: Number(defaultAcademySettings.tuition["90min"].fee ?? 0),
+    min90_kit: String(defaultAcademySettings.tuition["90min"].kit ?? ""),
+    elite_monthly: Number(defaultAcademySettings.tuition.elite.monthly ?? 0),
+    elite_fee: Number(defaultAcademySettings.tuition.elite.fee ?? 0),
+    elite_kit: String(defaultAcademySettings.tuition.elite.kit ?? ""),
+    adult_evening: Number(defaultAcademySettings.tuition.adult.evening ?? 0),
+    adult_morning: Number(defaultAcademySettings.tuition.adult.morning ?? 0),
+  });
+  const [customClassPrices, setCustomClassPrices] = useState<CustomClassPrice[]>([
+    {
+      class_name: "",
+      week1_price: 0,
+      week2_price: 0,
+      week3_price: 0,
+      elite_price: 0,
+      tryout_price: 0,
+      shuttle_fee: 0,
+      discount_percent: 0,
+      discount_won: 0,
+    },
+  ]);
   const [noticeTitle, setNoticeTitle] = useState("");
   const [noticeContent, setNoticeContent] = useState("");
   const [notices, setNotices] = useState<{ id: string; title: string; published_at: string }[]>([]);
@@ -78,7 +143,56 @@ export default function ParentSettingsPage() {
         setRefundJson(JSON.stringify(map.refund_policy, null, 2));
       }
       if (map.tuition && typeof map.tuition === "object") {
-        setTuitionJson(JSON.stringify(map.tuition, null, 2));
+        const t = map.tuition as Record<string, any>;
+        const t60 = (t["60min"] ?? {}) as Record<string, any>;
+        const t90 = (t["90min"] ?? {}) as Record<string, any>;
+        const te = (t.elite ?? {}) as Record<string, any>;
+        const ta = (t.adult ?? {}) as Record<string, any>;
+        setTuitionForm({
+          min60_1week: Number(t60["1week"] ?? 0),
+          min60_2week: Number(t60["2week"] ?? 0),
+          min60_fee: Number(t60.fee ?? 0),
+          min60_kit: String(t60.kit ?? ""),
+          min90_1week: Number(t90["1week"] ?? 0),
+          min90_2week: Number(t90["2week"] ?? 0),
+          min90_fee: Number(t90.fee ?? 0),
+          min90_kit: String(t90.kit ?? ""),
+          elite_monthly: Number(te.monthly ?? 0),
+          elite_fee: Number(te.fee ?? 0),
+          elite_kit: String(te.kit ?? ""),
+          adult_evening: Number(ta.evening ?? 0),
+          adult_morning: Number(ta.morning ?? 0),
+        });
+        const customRows = Array.isArray(t.custom_classes)
+          ? (t.custom_classes as Record<string, unknown>[]).map((row) => ({
+              class_name: String(row.class_name ?? ""),
+              week1_price: Number(row.week1_price ?? 0),
+              week2_price: Number(row.week2_price ?? 0),
+              week3_price: Number(row.week3_price ?? 0),
+              elite_price: Number(row.elite_price ?? 0),
+              tryout_price: Number(row.tryout_price ?? 0),
+              shuttle_fee: Number(row.shuttle_fee ?? 0),
+              discount_percent: Number(row.discount_percent ?? 0),
+              discount_won: Number(row.discount_won ?? 0),
+            }))
+          : [];
+        setCustomClassPrices(
+          customRows.length > 0
+            ? customRows
+            : [
+                {
+                  class_name: "",
+                  week1_price: 0,
+                  week2_price: 0,
+                  week3_price: 0,
+                  elite_price: 0,
+                  tryout_price: 0,
+                  shuttle_fee: 0,
+                  discount_percent: 0,
+                  discount_won: 0,
+                },
+              ]
+        );
       }
       if (map.site_branding !== undefined) {
         const b = mergeSiteBranding(map.site_branding);
@@ -106,7 +220,10 @@ export default function ParentSettingsPage() {
   }, []);
 
   useEffect(() => {
-    void load();
+    const timer = window.setTimeout(() => {
+      void load();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [load]);
 
   async function saveKey(key: string, value: unknown) {
@@ -160,6 +277,45 @@ export default function ParentSettingsPage() {
     }
   }
 
+  async function saveTuitionForm() {
+    await saveKey("tuition", {
+      "60min": {
+        "1week": Number(tuitionForm.min60_1week ?? 0),
+        "2week": Number(tuitionForm.min60_2week ?? 0),
+        fee: Number(tuitionForm.min60_fee ?? 0),
+        kit: tuitionForm.min60_kit.trim(),
+      },
+      "90min": {
+        "1week": Number(tuitionForm.min90_1week ?? 0),
+        "2week": Number(tuitionForm.min90_2week ?? 0),
+        fee: Number(tuitionForm.min90_fee ?? 0),
+        kit: tuitionForm.min90_kit.trim(),
+      },
+      elite: {
+        monthly: Number(tuitionForm.elite_monthly ?? 0),
+        fee: Number(tuitionForm.elite_fee ?? 0),
+        kit: tuitionForm.elite_kit.trim(),
+      },
+      adult: {
+        evening: Number(tuitionForm.adult_evening ?? 0),
+        morning: Number(tuitionForm.adult_morning ?? 0),
+      },
+      custom_classes: customClassPrices
+        .filter((row) => row.class_name.trim().length > 0)
+        .map((row) => ({
+          class_name: row.class_name.trim(),
+          week1_price: Number(row.week1_price ?? 0),
+          week2_price: Number(row.week2_price ?? 0),
+          week3_price: Number(row.week3_price ?? 0),
+          elite_price: Number(row.elite_price ?? 0),
+          tryout_price: Number(row.tryout_price ?? 0),
+          shuttle_fee: Number(row.shuttle_fee ?? 0),
+          discount_percent: Number(row.discount_percent ?? 0),
+          discount_won: Number(row.discount_won ?? 0),
+        })),
+    });
+  }
+
   async function postNotice() {
     setMessage("");
     setError("");
@@ -186,6 +342,49 @@ export default function ParentSettingsPage() {
     setMessage("공지가 등록되었습니다.");
     void load();
   }
+
+  const addCustomClassRow = () => {
+    setCustomClassPrices((prev) => [
+      ...prev,
+      {
+        class_name: "",
+        week1_price: 0,
+        week2_price: 0,
+        week3_price: 0,
+        elite_price: 0,
+        tryout_price: 0,
+        shuttle_fee: 0,
+        discount_percent: 0,
+        discount_won: 0,
+      },
+    ]);
+  };
+
+  const removeCustomClassRow = (idx: number) => {
+    setCustomClassPrices((prev) =>
+      prev.length <= 1 ? prev : prev.filter((_, index) => index !== idx)
+    );
+  };
+
+  const updateCustomClassRow = (
+    idx: number,
+    key: keyof CustomClassPrice,
+    value: string | number
+  ) => {
+    setCustomClassPrices((prev) =>
+      prev.map((row, index) =>
+        index === idx
+          ? {
+              ...row,
+              [key]:
+                key === "class_name"
+                  ? String(value)
+                  : Number(value),
+            }
+          : row
+      )
+    );
+  };
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-8">
@@ -354,7 +553,141 @@ export default function ParentSettingsPage() {
         <JsonEditorTab title="환불 정책 (JSON)" value={refundJson} onChange={setRefundJson} onSave={() => saveJson("refund_policy", refundJson)} />
       ) : null}
       {!loading && tab === "tuition" ? (
-        <JsonEditorTab title="수강료 표 (JSON)" value={tuitionJson} onChange={setTuitionJson} onSave={() => saveJson("tuition", tuitionJson)} />
+        <section className="space-y-4">
+          <h2 className="text-lg font-medium">수강료 입력</h2>
+          <p className="text-sm text-zinc-600">숫자만 입력하면 됩니다. 저장 시 공개 페이지에 바로 반영됩니다.</p>
+
+          <div className="grid gap-3 rounded-lg border p-3 dark:border-zinc-700">
+            <h3 className="text-sm font-semibold">60분 클래스</h3>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="text-sm">주 1회(월4회)
+                <input className="mt-1 w-full rounded border p-2 dark:border-zinc-600 dark:bg-zinc-900" type="number" value={tuitionForm.min60_1week} onChange={(e) => setTuitionForm((p) => ({ ...p, min60_1week: Number(e.target.value) }))} />
+              </label>
+              <label className="text-sm">주 2회(월8회)
+                <input className="mt-1 w-full rounded border p-2 dark:border-zinc-600 dark:bg-zinc-900" type="number" value={tuitionForm.min60_2week} onChange={(e) => setTuitionForm((p) => ({ ...p, min60_2week: Number(e.target.value) }))} />
+              </label>
+              <label className="text-sm">입회비
+                <input className="mt-1 w-full rounded border p-2 dark:border-zinc-600 dark:bg-zinc-900" type="number" value={tuitionForm.min60_fee} onChange={(e) => setTuitionForm((p) => ({ ...p, min60_fee: Number(e.target.value) }))} />
+              </label>
+              <label className="text-sm">웰컴키트 문구
+                <input className="mt-1 w-full rounded border p-2 dark:border-zinc-600 dark:bg-zinc-900" value={tuitionForm.min60_kit} onChange={(e) => setTuitionForm((p) => ({ ...p, min60_kit: e.target.value }))} />
+              </label>
+            </div>
+          </div>
+
+          <div className="grid gap-3 rounded-lg border p-3 dark:border-zinc-700">
+            <h3 className="text-sm font-semibold">90분 클래스</h3>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="text-sm">주 1회(월4회)
+                <input className="mt-1 w-full rounded border p-2 dark:border-zinc-600 dark:bg-zinc-900" type="number" value={tuitionForm.min90_1week} onChange={(e) => setTuitionForm((p) => ({ ...p, min90_1week: Number(e.target.value) }))} />
+              </label>
+              <label className="text-sm">주 2회(월8회)
+                <input className="mt-1 w-full rounded border p-2 dark:border-zinc-600 dark:bg-zinc-900" type="number" value={tuitionForm.min90_2week} onChange={(e) => setTuitionForm((p) => ({ ...p, min90_2week: Number(e.target.value) }))} />
+              </label>
+              <label className="text-sm">입회비
+                <input className="mt-1 w-full rounded border p-2 dark:border-zinc-600 dark:bg-zinc-900" type="number" value={tuitionForm.min90_fee} onChange={(e) => setTuitionForm((p) => ({ ...p, min90_fee: Number(e.target.value) }))} />
+              </label>
+              <label className="text-sm">웰컴키트 문구
+                <input className="mt-1 w-full rounded border p-2 dark:border-zinc-600 dark:bg-zinc-900" value={tuitionForm.min90_kit} onChange={(e) => setTuitionForm((p) => ({ ...p, min90_kit: e.target.value }))} />
+              </label>
+            </div>
+          </div>
+
+          <div className="grid gap-3 rounded-lg border p-3 dark:border-zinc-700">
+            <h3 className="text-sm font-semibold">대표팀 / 성인반</h3>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="text-sm">대표팀 월수강료
+                <input className="mt-1 w-full rounded border p-2 dark:border-zinc-600 dark:bg-zinc-900" type="number" value={tuitionForm.elite_monthly} onChange={(e) => setTuitionForm((p) => ({ ...p, elite_monthly: Number(e.target.value) }))} />
+              </label>
+              <label className="text-sm">대표팀 입회비
+                <input className="mt-1 w-full rounded border p-2 dark:border-zinc-600 dark:bg-zinc-900" type="number" value={tuitionForm.elite_fee} onChange={(e) => setTuitionForm((p) => ({ ...p, elite_fee: Number(e.target.value) }))} />
+              </label>
+              <label className="text-sm sm:col-span-2">대표팀 제공물품 문구
+                <input className="mt-1 w-full rounded border p-2 dark:border-zinc-600 dark:bg-zinc-900" value={tuitionForm.elite_kit} onChange={(e) => setTuitionForm((p) => ({ ...p, elite_kit: e.target.value }))} />
+              </label>
+              <label className="text-sm">성인 저녁반
+                <input className="mt-1 w-full rounded border p-2 dark:border-zinc-600 dark:bg-zinc-900" type="number" value={tuitionForm.adult_evening} onChange={(e) => setTuitionForm((p) => ({ ...p, adult_evening: Number(e.target.value) }))} />
+              </label>
+              <label className="text-sm">성인 오전반
+                <input className="mt-1 w-full rounded border p-2 dark:border-zinc-600 dark:bg-zinc-900" type="number" value={tuitionForm.adult_morning} onChange={(e) => setTuitionForm((p) => ({ ...p, adult_morning: Number(e.target.value) }))} />
+              </label>
+            </div>
+          </div>
+
+          <div className="grid gap-3 rounded-lg border p-3 dark:border-zinc-700">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold">반이름/요금 추가 설정</h3>
+              <button
+                type="button"
+                onClick={addCustomClassRow}
+                className="rounded border border-zinc-300 px-2 py-1 text-xs dark:border-zinc-600"
+              >
+                + 반 추가
+              </button>
+            </div>
+            <p className="text-xs text-zinc-500">
+              반이름, 주1/주2/주3, 대표팀, 트라이아웃, 셔틀비, 할인(%, 원)까지 입력할 수 있습니다.
+            </p>
+            <div className="space-y-3">
+              {customClassPrices.map((row, idx) => (
+                <div key={`custom-class-${idx}`} className="rounded border p-3 dark:border-zinc-700">
+                  <div className="mb-2 flex items-center justify-between">
+                    <span className="text-xs font-semibold">반 #{idx + 1}</span>
+                    <button
+                      type="button"
+                      onClick={() => removeCustomClassRow(idx)}
+                      className="rounded border border-rose-300 px-2 py-1 text-xs text-rose-600 dark:border-rose-700"
+                    >
+                      삭제
+                    </button>
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-3">
+                    <label className="text-xs sm:col-span-3">반이름
+                      <input className="mt-1 w-full rounded border p-2 dark:border-zinc-600 dark:bg-zinc-900" value={row.class_name} onChange={(e) => updateCustomClassRow(idx, "class_name", e.target.value)} />
+                    </label>
+                    <label className="text-xs">주 1회
+                      <input className="mt-1 w-full rounded border p-2 dark:border-zinc-600 dark:bg-zinc-900" type="number" value={row.week1_price} onChange={(e) => updateCustomClassRow(idx, "week1_price", e.target.value)} />
+                    </label>
+                    <label className="text-xs">주 2회
+                      <input className="mt-1 w-full rounded border p-2 dark:border-zinc-600 dark:bg-zinc-900" type="number" value={row.week2_price} onChange={(e) => updateCustomClassRow(idx, "week2_price", e.target.value)} />
+                    </label>
+                    <label className="text-xs">주 3회
+                      <input className="mt-1 w-full rounded border p-2 dark:border-zinc-600 dark:bg-zinc-900" type="number" value={row.week3_price} onChange={(e) => updateCustomClassRow(idx, "week3_price", e.target.value)} />
+                    </label>
+                    <label className="text-xs">대표팀
+                      <input className="mt-1 w-full rounded border p-2 dark:border-zinc-600 dark:bg-zinc-900" type="number" value={row.elite_price} onChange={(e) => updateCustomClassRow(idx, "elite_price", e.target.value)} />
+                    </label>
+                    <label className="text-xs">트라이아웃
+                      <input className="mt-1 w-full rounded border p-2 dark:border-zinc-600 dark:bg-zinc-900" type="number" value={row.tryout_price} onChange={(e) => updateCustomClassRow(idx, "tryout_price", e.target.value)} />
+                    </label>
+                    <label className="text-xs">셔틀비
+                      <input className="mt-1 w-full rounded border p-2 dark:border-zinc-600 dark:bg-zinc-900" type="number" value={row.shuttle_fee} onChange={(e) => updateCustomClassRow(idx, "shuttle_fee", e.target.value)} />
+                    </label>
+                    <label className="text-xs">할인 %
+                      <input className="mt-1 w-full rounded border p-2 dark:border-zinc-600 dark:bg-zinc-900" type="number" value={row.discount_percent} onChange={(e) => updateCustomClassRow(idx, "discount_percent", e.target.value)} />
+                    </label>
+                    <label className="text-xs">할인 원
+                      <input className="mt-1 w-full rounded border p-2 dark:border-zinc-600 dark:bg-zinc-900" type="number" value={row.discount_won} onChange={(e) => updateCustomClassRow(idx, "discount_won", e.target.value)} />
+                    </label>
+                  </div>
+                  <div className="mt-3 rounded bg-zinc-50 p-2 text-xs text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">
+                    할인 적용 자동계산: 주1회 {toWonText(applyDiscount(row.week1_price, row.discount_percent, row.discount_won))} /
+                    주2회 {toWonText(applyDiscount(row.week2_price, row.discount_percent, row.discount_won))} /
+                    주3회 {toWonText(applyDiscount(row.week3_price, row.discount_percent, row.discount_won))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => void saveTuitionForm()}
+            className="rounded bg-zinc-900 px-4 py-2 text-sm text-white dark:bg-zinc-100 dark:text-zinc-900"
+          >
+            저장
+          </button>
+        </section>
       ) : null}
 
       {!loading && tab === "notices" ? (

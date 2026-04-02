@@ -1,18 +1,21 @@
 import { requireRole } from "@/lib/auth/guards";
-import { getSupabaseServer } from "@/lib/supabase/server";
+import { getSupabaseServerWithAuth } from "@/lib/supabase/server-auth";
+import { NextRequest } from "next/server";
 import * as XLSX from "xlsx";
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   const guard = await requireRole(["admin", "teacher"]);
   if (!guard.ok) return guard.response;
 
-  const supabaseServer = getSupabaseServer();
+  const supabaseServer = getSupabaseServerWithAuth(request.headers.get("authorization"));
   const { searchParams } = new URL(request.url);
   const status = searchParams.get("status");
 
   let builder = supabaseServer
     .from("students")
-    .select("id, name, grade, phone, join_date, status, enrollments(monthly_fee, classes(name))")
+    .select(
+      "id, name, grade, phone, parent_name, parent_phone, father_phone, mother_phone, join_date, status, enrollments(monthly_fee, classes(name))"
+    )
     .order("join_date", { ascending: false });
   if (status) builder = builder.eq("status", status === "break" ? "paused" : status);
 
@@ -34,6 +37,10 @@ export async function GET(request: Request) {
       studentName: row.name,
       grade: row.grade,
       phone: row.phone,
+      parentName: row.parent_name ?? "",
+      parentPhone: row.parent_phone ?? "",
+      fatherPhone: row.father_phone ?? "",
+      motherPhone: row.mother_phone ?? "",
       startDate: row.join_date,
       status: row.status,
       monthlyFee: row.enrollments?.[0]?.monthly_fee ?? 0,

@@ -5,7 +5,10 @@ type ScrapedNotice = {
   author: string | null;
 };
 
-const DEFAULT_KVA_NOTICE_URL = "https://www.kva.or.kr/";
+const DEFAULT_KVA_NOTICE_URL =
+  "https://www.kva.or.kr/user/usr11Board/usrBoard.do?p_idNm=notice";
+const KVA_NOTICE_PATH_KEYWORD = "/user/usr11Board/";
+const KVA_NOTICE_QUERY_KEYWORD = "p_idNm=notice";
 
 function toAbsoluteUrl(baseUrl: string, href: string) {
   try {
@@ -55,13 +58,22 @@ export async function scrapeKVANotice(): Promise<ScrapedNotice[]> {
     if (!/(공지|notice|알림|협회|세미나|교육)/i.test(title)) continue;
     if (!href || href.startsWith("javascript:")) continue;
 
+    const absoluteLink = toAbsoluteUrl(targetUrl, href);
+    // KVA 공지 게시판(notice) 링크만 허용
+    if (
+      !absoluteLink.includes(KVA_NOTICE_PATH_KEYWORD) ||
+      !absoluteLink.includes(KVA_NOTICE_QUERY_KEYWORD)
+    ) {
+      continue;
+    }
+
     const block = html.slice(Math.max(0, match.index - 300), Math.min(html.length, match.index + 300));
     const originalDate = parseDateFromText(block) ?? parseDateFromText(title);
     const authorMatch = block.match(/(작성자|등록자|author)\s*[:：]?\s*([^\s<]{2,30})/i);
 
     results.push({
       title,
-      link: toAbsoluteUrl(targetUrl, href),
+      link: absoluteLink,
       originalDate,
       author: authorMatch?.[2] ?? null,
     });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 type KvaNotice = {
   id: string;
@@ -13,35 +13,38 @@ export function HomeKvaNotices() {
   const [notices, setNotices] = useState<KvaNotice[]>([]);
   const [loading, setLoading] = useState(false);
 
-  const loadNotices = async () => {
+  const loadNotices = useCallback(async () => {
     const res = await fetch("/api/notices/kva");
     const json = await res.json();
     if (res.ok) {
       setNotices(json.data ?? []);
     }
-  };
+  }, []);
 
-  const refreshNotices = async () => {
+  const refreshNotices = useCallback(async () => {
     setLoading(true);
     await fetch("/api/notices/kva", { method: "POST" });
     await loadNotices();
     setLoading(false);
-  };
+  }, [loadNotices]);
 
   useEffect(() => {
     const shouldRefresh = localStorage.getItem("kva-refresh-once") === "1";
-    if (shouldRefresh) {
-      localStorage.removeItem("kva-refresh-once");
-      void refreshNotices();
-      return;
-    }
-    void loadNotices();
-  }, []);
+    const timer = window.setTimeout(() => {
+      if (shouldRefresh) {
+        localStorage.removeItem("kva-refresh-once");
+        void refreshNotices();
+        return;
+      }
+      void loadNotices();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [loadNotices, refreshNotices]);
 
   return (
     <section className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="font-semibold">KVA 공지사항 (내부용)</h2>
+        <h2 className="font-semibold">KVA 공지사항 (최신 5건)</h2>
         <button
           type="button"
           onClick={refreshNotices}
@@ -55,7 +58,7 @@ export function HomeKvaNotices() {
         {notices.length === 0 ? (
           <li className="opacity-70">공지사항이 없습니다.</li>
         ) : (
-          notices.slice(0, 3).map((notice) => (
+          notices.slice(0, 5).map((notice) => (
             <li
               key={notice.id}
               className="flex items-start justify-between gap-3 border-b border-zinc-200 pb-2 last:border-b-0 dark:border-zinc-800"

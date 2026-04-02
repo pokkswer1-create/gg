@@ -31,10 +31,10 @@ export async function GET(request: Request) {
   const previousMonthKey = prevMonth(monthKey);
 
   const currentRange = monthRange(monthKey);
-  const previousRange = monthRange(previousMonthKey);
 
   const [
     studentsRes,
+    pendingStudentsRes,
     currentPaymentsRes,
     previousPaymentsRes,
     attendanceRes,
@@ -42,6 +42,7 @@ export async function GET(request: Request) {
     expensesRes,
   ] = await Promise.all([
     supabaseServer.from("students").select("id", { count: "exact", head: true }),
+    supabaseServer.from("students").select("id", { count: "exact", head: true }).eq("status", "paused"),
     supabaseServer
       .from("payments")
       .select("amount_due, amount_paid, status")
@@ -69,6 +70,7 @@ export async function GET(request: Request) {
 
   if (
     studentsRes.error ||
+    pendingStudentsRes.error ||
     currentPaymentsRes.error ||
     previousPaymentsRes.error ||
     attendanceRes.error ||
@@ -79,6 +81,7 @@ export async function GET(request: Request) {
       {
         error:
           studentsRes.error?.message ??
+          pendingStudentsRes.error?.message ??
           currentPaymentsRes.error?.message ??
           previousPaymentsRes.error?.message ??
           attendanceRes.error?.message ??
@@ -96,6 +99,9 @@ export async function GET(request: Request) {
 
   const thisMonthRevenue = currentPayments.reduce((sum, p) => sum + (p.amount_paid ?? 0), 0);
   const lastMonthRevenue = previousPayments.reduce((sum, p) => sum + (p.amount_paid ?? 0), 0);
+  const memberCount = studentsRes.count ?? 0;
+  const waitingMembers = pendingStudentsRes.count ?? 0;
+  const completedCount = currentPayments.filter((p) => p.status === "paid").length;
   const unpaidAmount = currentPayments.reduce(
     (sum, p) => sum + Math.max((p.amount_due ?? 0) - (p.amount_paid ?? 0), 0),
     0
@@ -108,24 +114,34 @@ export async function GET(request: Request) {
     ? Number(((absenceCount / attendance.length) * 100).toFixed(1))
     : 0;
   const makeupWaiting = absenceCount;
+  const thisMonthUnpaidMembers = Math.max(memberCount - completedCount, 0);
+
+  const classStatsRes = await supabaseServer
+    .from("classes")
+    .select("id, name, enrollments(id)");
+  if (classStatsRes.error) {
+    return NextResponse.json({ error: classStatsRes.error.message }, { status: 500 });
+  }
+  const classStats = (classStatsRes.data ?? []).map((klass) => ({
+    classId: klass.id,
+    className: klass.name,
+    count: (klass.enrollments ?? []).length,
+  }));
 
   const months = last12Months(monthKey);
   const monthlyData = await Promise.all(
     months.map(async (m) => {
       const range = monthRange(m);
-      const [pRes, eRes, aRes] = await Promise.all([
+      const [pRes, eRes] = await Promise.all([
         supabaseServer.from("payments").select("amount_paid").eq("month_key", m),
         supabaseServer.from("expenses").select("amount").gte("expense_date", range.from).lte("expense_date", range.to),
-        supabaseServer
-          .from("students")
-          .select("id", { count: "exact", head: true }),
       ]);
 
       return {
         month: m,
         revenue: (pRes.data ?? []).reduce((s, r) => s + (r.amount_paid ?? 0), 0),
         cost: (eRes.data ?? []).reduce((s, r) => s + (r.amount ?? 0), 0),
-        members: aRes.count ?? 0,
+        members: memberCount,
       };
     })
   );
@@ -134,10 +150,14 @@ export async function GET(request: Request) {
     thisMonthRevenue,
     lastMonthRevenue,
     netProfit,
-    memberCount: studentsRes.count ?? 0,
+    memberCount,
     totalClasses: classesRes.count ?? 0,
     unpaidAmount,
     unpaidCount,
+    waitingMembers,
+    thisMonthPaid: completedCount,
+    thisMonthUnpaidMembers,
+    classStats,
     absenceRate,
     makeupWaiting,
     monthlyData: monthlyData.map((item) => ({

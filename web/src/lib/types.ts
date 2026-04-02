@@ -1,10 +1,12 @@
 export type UserRole = "admin" | "teacher";
+export type ApprovalStatus = "PENDING" | "APPROVED" | "REJECTED";
 
 export type StudentStatus = "active" | "paused" | "withdrawn";
 export type AttendanceStatus = "present" | "absent" | "late" | "early_leave" | "makeup";
 export type PaymentStatus = "paid" | "pending" | "unpaid" | "refunded";
 export type MakeupStatus = "waiting" | "scheduled" | "completed";
 export type ClassType = "regular" | "trial" | "oneday";
+export type DiscountType = "none" | "amount" | "percent";
 
 export interface Student {
   id: string;
@@ -17,6 +19,8 @@ export interface Student {
   join_date: string;
   parent_name: string | null;
   parent_phone: string | null;
+  father_phone: string | null;
+  mother_phone: string | null;
   notes: string | null;
   created_at: string;
 }
@@ -26,13 +30,17 @@ export interface AcademyClass {
   name: string;
   teacher_name: string;
   class_type: ClassType;
+  class_category: "general" | "elite" | "tryout";
   class_status: "active" | "ended";
+  fee_mode: "monthly_fixed" | "per_session";
+  fee_per_session: number;
   days_of_week: string[];
   start_time: string;
   end_time: string;
   monthly_fee: number;
   monthly_sessions: number;
   capacity: number;
+  is_active: boolean;
   created_at: string;
 }
 
@@ -40,6 +48,14 @@ export interface Enrollment {
   id: string;
   student_id: string;
   class_id: string;
+  monthly_fee: number;
+  discount_type: DiscountType;
+  discount_value: number;
+  discount_reason: string | null;
+  discount_start_date: string | null;
+  discount_end_date: string | null;
+  final_fee: number;
+  start_date: string;
   enrolled_at: string;
 }
 
@@ -62,6 +78,10 @@ export interface Payment {
   amount_due: number;
   amount_paid: number;
   status: PaymentStatus;
+  payment_method: "online" | "transfer" | "cash" | "card" | "manual";
+  updated_by: string | null;
+  notes: string | null;
+  status_changed_at: string;
   paid_at: string | null;
   created_at: string;
 }

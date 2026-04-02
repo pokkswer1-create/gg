@@ -1,5 +1,6 @@
 "use client";
 
+import { authFetch } from "@/lib/auth-fetch";
 import { useEffect, useMemo, useState } from "react";
 
 type Reservation = {
@@ -21,7 +22,7 @@ export default function NaverReservationsPage() {
   const [message, setMessage] = useState("");
 
   const loadReservations = async (status = tab) => {
-    const res = await fetch(`/api/naver-reservations?status=${status}`);
+    const res = await authFetch(`/api/naver-reservations?status=${status}`);
     const json = await res.json();
     if (!res.ok) {
       setError(json.message ?? "예약 목록을 불러오지 못했습니다.");
@@ -43,7 +44,7 @@ export default function NaverReservationsPage() {
   }, [reservations]);
 
   const confirmReservation = async (id: string) => {
-    const res = await fetch(`/api/naver-reservations/${id}/confirm`, {
+    const res = await authFetch(`/api/naver-reservations/${id}/confirm`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ notes: "" }),
@@ -64,7 +65,7 @@ export default function NaverReservationsPage() {
     if (!monthlyFeeText) return;
     const monthlyFee = Number(monthlyFeeText);
 
-    const res = await fetch(`/api/naver-reservations/${id}/convert-to-member`, {
+    const res = await authFetch(`/api/naver-reservations/${id}/convert-to-member`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ grade, monthlyFee }),
@@ -81,7 +82,7 @@ export default function NaverReservationsPage() {
   const cancelReservation = async (id: string) => {
     const reason = window.prompt("취소 사유를 입력하세요");
     if (!reason) return;
-    const res = await fetch(`/api/naver-reservations/${id}/cancel`, {
+    const res = await authFetch(`/api/naver-reservations/${id}/cancel`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ reason }),

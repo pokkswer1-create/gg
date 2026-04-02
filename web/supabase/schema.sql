@@ -16,6 +16,87 @@ add column if not exists approved boolean not null default true;
 alter table public.profiles
 add column if not exists approved_at timestamptz;
 
+alter table public.profiles
+add column if not exists phone text;
+
+alter table public.profiles
+add column if not exists organization text;
+
+alter table public.profiles
+add column if not exists position text;
+
+alter table public.profiles
+add column if not exists approval_status text;
+
+alter table public.profiles
+add column if not exists approved_by uuid references public.profiles(id) on delete set null;
+
+alter table public.profiles
+add column if not exists rejection_reason text;
+
+alter table public.profiles
+add column if not exists reviewed_at timestamptz;
+
+update public.profiles
+set approval_status = case
+  when approved = false then 'PENDING'
+  else 'APPROVED'
+end
+where approval_status is null;
+
+alter table public.profiles
+alter column approval_status set default 'PENDING';
+
+alter table public.profiles
+alter column approval_status set not null;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'profiles_approval_status_check'
+      and conrelid = 'public.profiles'::regclass
+  ) then
+    alter table public.profiles
+    add constraint profiles_approval_status_check
+    check (approval_status in ('PENDING', 'APPROVED', 'REJECTED'));
+  end if;
+end $$;
+
+create index if not exists idx_profiles_approval_status_created_at
+on public.profiles(approval_status, created_at desc);
+
+create index if not exists idx_profiles_email_lower
+on public.profiles((lower(email)));
+
+create table if not exists public.user_approval_events (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  actor_profile_id uuid references public.profiles(id) on delete set null,
+  from_status text not null check (from_status in ('PENDING', 'APPROVED', 'REJECTED')),
+  to_status text not null check (to_status in ('PENDING', 'APPROVED', 'REJECTED')),
+  reason text,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_user_approval_events_user_created_at
+on public.user_approval_events(user_id, created_at desc);
+
+create table if not exists public.user_email_notifications (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references public.profiles(id) on delete set null,
+  recipient_email text not null,
+  template_kind text not null check (template_kind in ('submitted', 'approved', 'rejected')),
+  status text not null default 'sent' check (status in ('sent', 'failed', 'skipped')),
+  provider_message_id text,
+  error_message text,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_user_email_notifications_user_created_at
+on public.user_email_notifications(user_id, created_at desc);
+
 create table if not exists public.students (
   id uuid primary key default gen_random_uuid(),
   name text not null,
@@ -32,17 +113,25 @@ create table if not exists public.students (
   updated_at timestamptz not null default now()
 );
 
+alter table public.students
+add column if not exists father_phone text,
+add column if not exists mother_phone text;
+
 create table if not exists public.classes (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   teacher_name text not null,
   class_type text not null default 'regular' check (class_type in ('regular', 'trial', 'oneday')),
+  class_category text not null default 'general' check (class_category in ('general', 'elite', 'tryout')),
   days_of_week text[] not null default '{}',
   start_time time not null,
   end_time time not null,
+  fee_mode text not null default 'monthly_fixed' check (fee_mode in ('monthly_fixed', 'per_session')),
+  fee_per_session integer not null default 0,
   monthly_fee integer not null default 0,
   monthly_sessions integer not null default 0,
   capacity integer not null default 0,
+  is_active boolean not null default true,
   class_status text not null default 'active' check (class_status in ('active', 'ended')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -52,15 +141,54 @@ alter table public.classes
 add column if not exists class_status text not null default 'active'
 check (class_status in ('active', 'ended'));
 
+alter table public.classes
+add column if not exists class_category text not null default 'general'
+check (class_category in ('general', 'elite', 'tryout'));
+
+alter table public.classes
+add column if not exists fee_mode text not null default 'monthly_fixed'
+check (fee_mode in ('monthly_fixed', 'per_session'));
+
+alter table public.classes
+add column if not exists fee_per_session integer not null default 0;
+
+alter table public.classes
+add column if not exists is_active boolean not null default true;
+
 create table if not exists public.enrollments (
   id uuid primary key default gen_random_uuid(),
   student_id uuid not null references public.students(id) on delete cascade,
   class_id uuid not null references public.classes(id) on delete cascade,
   monthly_fee integer not null default 0,
+  discount_type text not null default 'none' check (discount_type in ('none', 'amount', 'percent')),
+  discount_value integer not null default 0,
+  discount_reason text,
+  discount_start_date date,
+  discount_end_date date,
+  final_fee integer not null default 0,
   start_date date not null default current_date,
   enrolled_at timestamptz not null default now(),
   unique(student_id, class_id)
 );
+
+alter table public.enrollments
+add column if not exists discount_type text not null default 'none'
+check (discount_type in ('none', 'amount', 'percent'));
+
+alter table public.enrollments
+add column if not exists discount_value integer not null default 0;
+
+alter table public.enrollments
+add column if not exists discount_reason text;
+
+alter table public.enrollments
+add column if not exists discount_start_date date;
+
+alter table public.enrollments
+add column if not exists discount_end_date date;
+
+alter table public.enrollments
+add column if not exists final_fee integer not null default 0;
 
 create table if not exists public.attendance_records (
   id uuid primary key default gen_random_uuid(),
@@ -104,10 +232,59 @@ create table if not exists public.payments (
   amount_due integer not null default 0,
   amount_paid integer not null default 0,
   status text not null default 'pending' check (status in ('paid', 'pending', 'unpaid', 'refunded')),
+  payment_method text not null default 'online' check (payment_method in ('online', 'transfer', 'cash', 'card', 'manual')),
+  updated_by uuid references public.profiles(id) on delete set null,
+  notes text,
+  status_changed_at timestamptz not null default now(),
   paid_at timestamptz,
   created_at timestamptz not null default now(),
   unique(student_id, month_key)
 );
+
+alter table public.payments
+add column if not exists payment_method text not null default 'online'
+check (payment_method in ('online', 'transfer', 'cash', 'card', 'manual'));
+
+alter table public.payments
+add column if not exists updated_by uuid references public.profiles(id) on delete set null;
+
+alter table public.payments
+add column if not exists notes text;
+
+alter table public.payments
+add column if not exists status_changed_at timestamptz not null default now();
+
+create table if not exists public.member_change_logs (
+  id uuid primary key default gen_random_uuid(),
+  student_id uuid not null references public.students(id) on delete cascade,
+  actor_profile_id uuid references public.profiles(id) on delete set null,
+  action text not null,
+  reason text,
+  before_data jsonb not null default '{}'::jsonb,
+  after_data jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_member_change_logs_student_created
+on public.member_change_logs(student_id, created_at desc);
+
+create table if not exists public.payment_change_logs (
+  id uuid primary key default gen_random_uuid(),
+  payment_id uuid references public.payments(id) on delete set null,
+  student_id uuid references public.students(id) on delete set null,
+  actor_profile_id uuid references public.profiles(id) on delete set null,
+  month_key text not null,
+  from_status text,
+  to_status text not null,
+  amount_due integer not null default 0,
+  amount_paid integer not null default 0,
+  reason text,
+  meta jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_payment_change_logs_student_month
+on public.payment_change_logs(student_id, month_key, created_at desc);
 
 create table if not exists public.payment_reminders (
   id uuid primary key default gen_random_uuid(),
@@ -605,6 +782,8 @@ alter table public.employees enable row level security;
 alter table public.salary_runs enable row level security;
 alter table public.salary_payments enable row level security;
 alter table public.member_histories enable row level security;
+alter table public.member_change_logs enable row level security;
+alter table public.payment_change_logs enable row level security;
 alter table public.external_notices enable row level security;
 alter table public.instagram_posts enable row level security;
 alter table public.instagram_comments enable row level security;
@@ -618,10 +797,20 @@ alter table public.shuttle_schedules enable row level security;
 alter table public.class_announcements enable row level security;
 alter table public.class_application_links enable row level security;
 alter table public.announcement_send_logs enable row level security;
+alter table public.user_approval_events enable row level security;
+alter table public.user_email_notifications enable row level security;
 
 create or replace function public.current_user_role()
-returns text language sql stable as $$
-  select role from public.profiles where id = auth.uid()
+returns text
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select role
+  from public.profiles
+  where id = auth.uid()
+    and approval_status = 'APPROVED'
 $$;
 
 drop policy if exists "profiles_select_own" on public.profiles;
@@ -632,6 +821,29 @@ using (id = auth.uid());
 drop policy if exists "profiles_upsert_admin" on public.profiles;
 create policy "profiles_upsert_admin"
 on public.profiles for all
+using (public.current_user_role() = 'admin')
+with check (public.current_user_role() = 'admin');
+
+drop policy if exists "profiles_insert_own" on public.profiles;
+create policy "profiles_insert_own"
+on public.profiles for insert
+with check (id = auth.uid());
+
+drop policy if exists "profiles_update_own_limited" on public.profiles;
+create policy "profiles_update_own_limited"
+on public.profiles for update
+using (false)
+with check (false);
+
+drop policy if exists "user_approval_events_admin_all" on public.user_approval_events;
+create policy "user_approval_events_admin_all"
+on public.user_approval_events for all
+using (public.current_user_role() = 'admin')
+with check (public.current_user_role() = 'admin');
+
+drop policy if exists "user_email_notifications_admin_all" on public.user_email_notifications;
+create policy "user_email_notifications_admin_all"
+on public.user_email_notifications for all
 using (public.current_user_role() = 'admin')
 with check (public.current_user_role() = 'admin');
 
@@ -829,6 +1041,28 @@ on public.member_histories for all
 using (public.current_user_role() = 'admin')
 with check (public.current_user_role() = 'admin');
 
+drop policy if exists "member_change_logs_admin_teacher_read" on public.member_change_logs;
+create policy "member_change_logs_admin_teacher_read"
+on public.member_change_logs for select
+using (public.current_user_role() in ('admin', 'teacher'));
+
+drop policy if exists "member_change_logs_admin_write" on public.member_change_logs;
+create policy "member_change_logs_admin_write"
+on public.member_change_logs for all
+using (public.current_user_role() = 'admin')
+with check (public.current_user_role() = 'admin');
+
+drop policy if exists "payment_change_logs_admin_teacher_read" on public.payment_change_logs;
+create policy "payment_change_logs_admin_teacher_read"
+on public.payment_change_logs for select
+using (public.current_user_role() in ('admin', 'teacher'));
+
+drop policy if exists "payment_change_logs_admin_write" on public.payment_change_logs;
+create policy "payment_change_logs_admin_write"
+on public.payment_change_logs for all
+using (public.current_user_role() = 'admin')
+with check (public.current_user_role() = 'admin');
+
 drop policy if exists "external_notices_admin_teacher_read" on public.external_notices;
 create policy "external_notices_admin_teacher_read"
 on public.external_notices for select
@@ -861,6 +1095,18 @@ create policy "instagram_comments_admin_write"
 on public.instagram_comments for all
 using (public.current_user_role() = 'admin')
 with check (public.current_user_role() = 'admin');
+
+drop policy if exists "instagram_links_admin_teacher_own" on public.instagram_links;
+create policy "instagram_links_admin_teacher_own"
+on public.instagram_links for all
+using (
+  public.current_user_role() in ('admin', 'teacher')
+  and owner_profile_id = auth.uid()
+)
+with check (
+  public.current_user_role() in ('admin', 'teacher')
+  and owner_profile_id = auth.uid()
+);
 
 drop policy if exists "post_internal_comments_admin_teacher_read" on public.post_internal_comments;
 create policy "post_internal_comments_admin_teacher_read"
@@ -1109,6 +1355,11 @@ on public.academy_settings for all
 using (public.current_user_role() = 'admin')
 with check (public.current_user_role() = 'admin');
 
+drop policy if exists "academy_settings_public_read" on public.academy_settings;
+create policy "academy_settings_public_read"
+on public.academy_settings for select
+using (true);
+
 drop policy if exists "public_notices_admin_all" on public.public_notices;
 create policy "public_notices_admin_all"
 on public.public_notices for all
@@ -1158,6 +1409,9 @@ create table if not exists public.staff_calendar_events (
 );
 
 create index if not exists idx_staff_calendar_events_date on public.staff_calendar_events(event_date);
+create index if not exists idx_students_status_name on public.students(status, name);
+create index if not exists idx_enrollments_class_student on public.enrollments(class_id, student_id);
+create index if not exists idx_payments_student_month_status on public.payments(student_id, month_key, status);
 
 alter table public.staff_calendar_events enable row level security;
 

@@ -1,5 +1,6 @@
 "use client";
 
+import { authFetch } from "@/lib/auth-fetch";
 import { useEffect, useMemo, useState } from "react";
 
 type Journal = {
@@ -37,9 +38,9 @@ export default function JournalsPage() {
 
   const loadData = async () => {
     const [journalsRes, studentsRes, statsRes] = await Promise.all([
-      fetch(`/api/journals?month=${month}`),
-      fetch("/api/students?sort=name.asc"),
-      fetch(`/api/work-log/stats?month=${month}`),
+      authFetch(`/api/journals?month=${month}`),
+      authFetch("/api/students?sort=name.asc"),
+      authFetch(`/api/work-log/stats?month=${month}`),
     ]);
     const journalsJson = await journalsRes.json();
     const studentsJson = await studentsRes.json();
@@ -63,7 +64,7 @@ export default function JournalsPage() {
     setError("");
     setMessage("");
 
-    const res = await fetch("/api/journals", {
+    const res = await authFetch("/api/journals", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

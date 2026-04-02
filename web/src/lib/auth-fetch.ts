@@ -8,8 +8,11 @@ export async function authFetch(input: RequestInfo | URL, init?: RequestInit): P
   let token: string | undefined;
   try {
     const supabase = getSupabaseClient();
-    const { data } = await supabase.auth.getSession();
-    token = data.session?.access_token;
+    const sessionResult = (await Promise.race([
+      supabase.auth.getSession(),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
+    ])) as Awaited<ReturnType<typeof supabase.auth.getSession>> | null;
+    token = sessionResult?.data.session?.access_token;
   } catch {
     /* Supabase 미설정 등 */
   }
