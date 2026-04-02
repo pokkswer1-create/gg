@@ -48,6 +48,20 @@ const SELECT_STUDENTS_LEGACY_ENROLLMENT_PAYMENTS = `
     payments(id, month_key, amount_due, amount_paid, status, paid_at)
   `;
 
+// Super-legacy fallback for older DBs:
+// - enrollments 할인/최종수강료 컬럼을 완전히 제외
+// - payments의 payment_method/notes/status_changed_at 등 메타 컬럼도 제외
+const SELECT_STUDENTS_MINIMAL_EMBED = `
+    *,
+    enrollments(
+      id,
+      class_id,
+      monthly_fee,
+      classes(id, name, teacher_name, class_type, monthly_fee, monthly_sessions)
+    ),
+    payments(id, month_key, status, paid_at)
+  `;
+
 export async function GET(request: Request) {
   const guard = await requireRole(["admin", "teacher"]);
   if (!guard.ok) return guard.response;
@@ -90,7 +104,12 @@ export async function GET(request: Request) {
 
   let { data, error } = await runListQuery(SELECT_STUDENTS_FULL);
   const err0 = supabaseErrorText(error);
-  if (error && isMissingEnrollmentDiscountColumn(err0)) {
+  const err0Lower = err0.toLowerCase();
+  const shouldFallbackDiscount =
+    isMissingEnrollmentDiscountColumn(err0) ||
+    (err0Lower.includes("discount_type") && err0Lower.includes("enrollments"));
+
+  if (error && shouldFallbackDiscount) {
     const res = await runListQuery(SELECT_STUDENTS_LEGACY_ENROLLMENT);
     data = res.data;
     error = res.error;
@@ -98,6 +117,14 @@ export async function GET(request: Request) {
   const err1 = supabaseErrorText(error);
   if (error && isMissingPaymentsEmbedColumn(err1)) {
     const res = await runListQuery(SELECT_STUDENTS_LEGACY_ENROLLMENT_PAYMENTS);
+    data = res.data;
+    error = res.error;
+  }
+
+  // If we still can't embed enrollments/payments due to partial migrations,
+  // at least return the students list without breaking the page.
+  if (error) {
+    const res = await runListQuery(SELECT_STUDENTS_MINIMAL_EMBED);
     data = res.data;
     error = res.error;
   }
