@@ -1,10 +1,7 @@
 import { requireRole } from "@/lib/auth/guards";
+import { monthRange } from "@/lib/month-range";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
-
-function monthRange(monthKey: string) {
-  return { from: `${monthKey}-01`, to: `${monthKey}-31` };
-}
 
 function prevMonth(monthKey: string) {
   const d = new Date(`${monthKey}-01T00:00:00`);

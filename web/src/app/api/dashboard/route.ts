@@ -1,4 +1,5 @@
 import { requireRole } from "@/lib/auth/guards";
+import { monthRange, monthRangeTs } from "@/lib/month-range";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
@@ -8,6 +9,8 @@ export async function GET() {
 
   const supabaseServer = getSupabaseServer();
   const monthKey = new Date().toISOString().slice(0, 7);
+  const range = monthRange(monthKey);
+  const rangeTs = monthRangeTs(monthKey);
 
   const [studentsRes, paymentsRes, attendanceRes, salaryRes, journalsRes, naverRes, kakaoRes] = await Promise.all([
     supabaseServer.from("students").select("id", { count: "exact", head: true }),
@@ -18,8 +21,8 @@ export async function GET() {
     supabaseServer
       .from("attendance_records")
       .select("status")
-      .gte("class_date", `${monthKey}-01`)
-      .lte("class_date", `${monthKey}-31`),
+      .gte("class_date", range.from)
+      .lte("class_date", range.to),
     supabaseServer
       .from("salary_statements")
       .select("net_salary")
@@ -27,8 +30,8 @@ export async function GET() {
     supabaseServer
       .from("teacher_journals")
       .select("id")
-      .gte("created_at", `${monthKey}-01T00:00:00`)
-      .lte("created_at", `${monthKey}-31T23:59:59`),
+      .gte("created_at", rangeTs.fromTs)
+      .lte("created_at", rangeTs.toTs),
     supabaseServer
       .from("naver_reservations")
       .select("id")

@@ -1,4 +1,5 @@
 import { requireRole } from "@/lib/auth/guards";
+import { monthRange } from "@/lib/month-range";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
@@ -20,7 +21,8 @@ export async function GET(request: Request) {
     builder = builder.eq("class_id", classId);
   }
   if (month) {
-    builder = builder.gte("class_date", `${month}-01`).lte("class_date", `${month}-31`);
+    const range = monthRange(month);
+    builder = builder.gte("class_date", range.from).lte("class_date", range.to);
   }
 
   const { data, error } = await builder;

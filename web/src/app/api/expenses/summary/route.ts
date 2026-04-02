@@ -1,4 +1,5 @@
 import { requireRole } from "@/lib/auth/guards";
+import { monthRange } from "@/lib/month-range";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
@@ -7,8 +8,9 @@ export async function GET(request: Request) {
   if (!guard.ok) return guard.response;
   const month = new URL(request.url).searchParams.get("month") ?? new Date().toISOString().slice(0, 7);
   const supabaseServer = getSupabaseServer();
+  const range = monthRange(month);
   const [{ data: expenses }, { data: payments }] = await Promise.all([
-    supabaseServer.from("expenses").select("category, amount").gte("expense_date", `${month}-01`).lte("expense_date", `${month}-31`),
+    supabaseServer.from("expenses").select("category, amount").gte("expense_date", range.from).lte("expense_date", range.to),
     supabaseServer.from("payments").select("amount_paid").eq("month_key", month),
   ]);
   const byCategory: Record<string, number> = {};

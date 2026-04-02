@@ -1,4 +1,5 @@
 import { requireRole } from "@/lib/auth/guards";
+import { monthRange, monthRangeTs } from "@/lib/month-range";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
@@ -10,8 +11,8 @@ export async function POST(request: Request) {
   const body = await request.json();
   const monthKey: string = body.month_key ?? new Date().toISOString().slice(0, 7);
 
-  const monthStart = `${monthKey}-01`;
-  const monthEnd = `${monthKey}-31`;
+  const range = monthRange(monthKey);
+  const rangeTs = monthRangeTs(monthKey);
 
   const [teachersRes, policiesRes, attendanceRes, journalsRes] = await Promise.all([
     supabaseServer.from("profiles").select("id, full_name").eq("role", "teacher"),
@@ -19,13 +20,13 @@ export async function POST(request: Request) {
     supabaseServer
       .from("attendance_records")
       .select("id, class_id, class_date, classes(teacher_name)")
-      .gte("class_date", monthStart)
-      .lte("class_date", monthEnd),
+      .gte("class_date", range.from)
+      .lte("class_date", range.to),
     supabaseServer
       .from("teacher_journals")
       .select("id, teacher_profile_id, created_at")
-      .gte("created_at", `${monthStart}T00:00:00`)
-      .lte("created_at", `${monthEnd}T23:59:59`),
+      .gte("created_at", rangeTs.fromTs)
+      .lte("created_at", rangeTs.toTs),
   ]);
 
   if (teachersRes.error || policiesRes.error || attendanceRes.error || journalsRes.error) {
