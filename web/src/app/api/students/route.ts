@@ -86,7 +86,10 @@ export async function GET(request: Request) {
 
   const monthKey = month ?? new Date().toISOString().slice(0, 7);
   const thisMonthPaid = items.filter((student) =>
-    (student.payments ?? []).some((payment) => payment.month_key === monthKey && payment.status === "paid")
+    (student.payments ?? []).some(
+      (payment: { month_key: string; status: string }) =>
+        payment.month_key === monthKey && payment.status === "paid"
+    )
   ).length;
   const waitingCount = items.filter((student) => student.status === "paused").length;
   const classStats = new Map<string, { classId: string; className: string; count: number }>();

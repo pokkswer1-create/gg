@@ -605,6 +605,6 @@ function Th({ children }: { children: ReactNode }) {
   return <th className="px-3 py-2 text-left font-medium">{children}</th>;
 }
 
-function Td({ children }: { children: ReactNode }) {
-  return <td className="px-3 py-2 align-top">{children}</td>;
+function Td({ children, className }: { children: ReactNode; className?: string }) {
+  return <td className={className ? `px-3 py-2 align-top ${className}` : "px-3 py-2 align-top"}>{children}</td>;
 }
