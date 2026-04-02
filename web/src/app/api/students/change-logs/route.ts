@@ -1,6 +1,7 @@
 import { requireRole } from "@/lib/auth/guards";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
+import { isMissingTableError, supabaseErrorText } from "@/lib/enrollment-db-compat";
 
 export async function GET(request: Request) {
   const guard = await requireRole(["admin", "teacher"]);
@@ -21,6 +22,11 @@ export async function GET(request: Request) {
 
   const { data, error } = await builder;
   if (error) {
+    const errText = supabaseErrorText(error);
+    if (isMissingTableError(errText)) {
+      // DB 마이그레이션이 아직 안 된 상태에서도 페이지가 깨지지 않게 빈 배열 반환
+      return NextResponse.json({ data: [] });
+    }
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
   return NextResponse.json({ data: data ?? [] });

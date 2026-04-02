@@ -53,3 +53,14 @@ export function isMissingPaymentsEmbedColumn(text: string) {
     m.includes("payments.notes");
   return m.includes("does not exist") && mentionsPayments && mentionsCols;
 }
+
+/** Missing table errors on Supabase/PostgREST */
+export function isMissingTableError(text: string) {
+  const m = (text ?? "").toLowerCase();
+  if (!m) return false;
+  return (
+    m.includes("could not find the table") ||
+    m.includes("relation") && m.includes("does not exist") && m.includes("public.") ||
+    m.includes("does not exist") && m.includes("public.") && m.includes("table")
+  );
+}
