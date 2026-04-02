@@ -1,5 +1,5 @@
 import { requireRole } from "@/lib/auth/guards";
-import { isMissingEnrollmentDiscountColumn } from "@/lib/enrollment-db-compat";
+import { isMissingEnrollmentDiscountColumn, supabaseErrorText } from "@/lib/enrollment-db-compat";
 import type { DiscountType } from "@/lib/types";
 import { calculateFinalFee } from "@/lib/tuition";
 import { getSupabaseServer } from "@/lib/supabase/server";
@@ -84,7 +84,7 @@ export async function PATCH(request: Request) {
           },
           { onConflict: "student_id,class_id" }
         );
-        if (res.error && isMissingEnrollmentDiscountColumn(res.error.message)) {
+        if (res.error && isMissingEnrollmentDiscountColumn(supabaseErrorText(res.error))) {
           res = await supabaseServer.from("enrollments").upsert(
             { student_id: studentId, class_id: body.class_id, monthly_fee: monthlyFee },
             { onConflict: "student_id,class_id" }
@@ -115,7 +115,7 @@ export async function PATCH(request: Request) {
             final_fee: finalFee,
           })
           .eq("id", enrollment.data.id);
-        if (res.error && isMissingEnrollmentDiscountColumn(res.error.message)) {
+        if (res.error && isMissingEnrollmentDiscountColumn(supabaseErrorText(res.error))) {
           throw new Error(
             "enrollments 할인 컬럼이 없습니다. Supabase SQL Editor에서 web/supabase/migrations/20260402120000_enrollments_discount_columns.sql 을 실행하세요."
           );
@@ -131,7 +131,7 @@ export async function PATCH(request: Request) {
           .order("enrolled_at", { ascending: false })
           .limit(1)
           .maybeSingle();
-        if (enrollment.error && isMissingEnrollmentDiscountColumn(enrollment.error.message)) {
+        if (enrollment.error && isMissingEnrollmentDiscountColumn(supabaseErrorText(enrollment.error))) {
           enrollment = await supabaseServer
             .from("enrollments")
             .select("monthly_fee")

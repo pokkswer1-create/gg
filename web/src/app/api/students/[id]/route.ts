@@ -1,5 +1,9 @@
 import { requireRole } from "@/lib/auth/guards";
-import { isMissingEnrollmentDiscountColumn } from "@/lib/enrollment-db-compat";
+import {
+  isMissingEnrollmentDiscountColumn,
+  isMissingPaymentsEmbedColumn,
+  supabaseErrorText,
+} from "@/lib/enrollment-db-compat";
 import { calculateFinalFee } from "@/lib/tuition";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
@@ -110,8 +114,16 @@ export async function PATCH(request: Request, context: Context) {
       },
       { onConflict: "student_id,class_id" }
     );
-    if (enrollmentRes.error) {
-      return NextResponse.json({ error: enrollmentRes.error.message }, { status: 500 });
+    if (enrollmentRes.error && isMissingEnrollmentDiscountColumn(supabaseErrorText(enrollmentRes.error))) {
+      const minimal = await supabaseServer.from("enrollments").upsert(
+        { student_id: id, class_id: enrollment.class_id, monthly_fee: baseFee },
+        { onConflict: "student_id,class_id" }
+      );
+      if (minimal.error) {
+        return NextResponse.json({ error: supabaseErrorText(minimal.error) }, { status: 500 });
+      }
+    } else if (enrollmentRes.error) {
+      return NextResponse.json({ error: supabaseErrorText(enrollmentRes.error) }, { status: 500 });
     }
   }
 
@@ -204,7 +216,7 @@ export async function PATCH(request: Request, context: Context) {
     .eq("id", id)
     .single();
 
-  if (error && isMissingEnrollmentDiscountColumn(error.message)) {
+  if (error && isMissingEnrollmentDiscountColumn(supabaseErrorText(error))) {
     const fb = await supabaseServer
       .from("students")
       .select(
@@ -224,8 +236,28 @@ export async function PATCH(request: Request, context: Context) {
     data = fb.data;
     error = fb.error;
   }
+  if (error && isMissingPaymentsEmbedColumn(supabaseErrorText(error))) {
+    const fb2 = await supabaseServer
+      .from("students")
+      .select(
+        `
+      *,
+      enrollments(
+        id,
+        class_id,
+        monthly_fee,
+        classes(id, name, monthly_fee)
+      ),
+      payments(id, month_key, amount_due, amount_paid, status, paid_at)
+    `
+      )
+      .eq("id", id)
+      .single();
+    data = fb2.data;
+    error = fb2.error;
+  }
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: supabaseErrorText(error) }, { status: 500 });
   }
   return NextResponse.json({ data: updatedStudent ? { ...data, ...updatedStudent } : data });
 }

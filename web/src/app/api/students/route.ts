@@ -1,8 +1,52 @@
 import { requireRole } from "@/lib/auth/guards";
-import { isMissingEnrollmentDiscountColumn } from "@/lib/enrollment-db-compat";
+import type { DiscountType } from "@/lib/types";
+import {
+  isMissingEnrollmentDiscountColumn,
+  isMissingPaymentsEmbedColumn,
+  supabaseErrorText,
+} from "@/lib/enrollment-db-compat";
 import { calculateFinalFee } from "@/lib/tuition";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
+
+const SELECT_STUDENTS_FULL = `
+    *,
+    enrollments(
+      id,
+      class_id,
+      monthly_fee,
+      discount_type,
+      discount_value,
+      discount_reason,
+      discount_start_date,
+      discount_end_date,
+      final_fee,
+      classes(id, name, teacher_name, class_type, monthly_fee, monthly_sessions)
+    ),
+    payments(id, month_key, amount_due, amount_paid, status, paid_at, payment_method, notes, status_changed_at)
+  `;
+
+const SELECT_STUDENTS_LEGACY_ENROLLMENT = `
+    *,
+    enrollments(
+      id,
+      class_id,
+      monthly_fee,
+      classes(id, name, teacher_name, class_type, monthly_fee, monthly_sessions)
+    ),
+    payments(id, month_key, amount_due, amount_paid, status, paid_at, payment_method, notes, status_changed_at)
+  `;
+
+const SELECT_STUDENTS_LEGACY_ENROLLMENT_PAYMENTS = `
+    *,
+    enrollments(
+      id,
+      class_id,
+      monthly_fee,
+      classes(id, name, teacher_name, class_type, monthly_fee, monthly_sessions)
+    ),
+    payments(id, month_key, amount_due, amount_paid, status, paid_at)
+  `;
 
 export async function GET(request: Request) {
   const guard = await requireRole(["admin", "teacher"]);
@@ -19,98 +63,67 @@ export async function GET(request: Request) {
   const page = Math.max(Number(searchParams.get("page") ?? 1), 1);
   const pageSize = Math.min(Math.max(Number(searchParams.get("pageSize") ?? 100), 1), 300);
   const sort = searchParams.get("sort") ?? "join_date.desc";
-
-  let builder = supabaseServer.from("students").select(`
-    *,
-    enrollments(
-      id,
-      class_id,
-      monthly_fee,
-      discount_type,
-      discount_value,
-      discount_reason,
-      discount_start_date,
-      discount_end_date,
-      final_fee,
-      classes(id, name, teacher_name, class_type, monthly_fee, monthly_sessions)
-    ),
-    payments(id, month_key, amount_due, amount_paid, status, paid_at, payment_method, notes, status_changed_at)
-  `);
-
-  if (query) {
-    builder = builder.or(
-      `name.ilike.%${query}%,phone.ilike.%${query}%,parent_phone.ilike.%${query}%,father_phone.ilike.%${query}%,mother_phone.ilike.%${query}%`
-    );
-  }
-  if (status) {
-    const mappedStatus = status === "break" ? "paused" : status;
-    builder = builder.eq("status", mappedStatus);
-  }
-  if (grade) {
-    builder = builder.eq("grade", grade);
-  }
-  if (classId) {
-    builder = builder.eq("enrollments.class_id", classId);
-  }
-  if (month) {
-    builder = builder.eq("payments.month_key", month);
-  }
-
   const [column, direction] = sort.split(".");
-  builder = builder.order(column, { ascending: direction !== "desc" });
-  builder = builder.range((page - 1) * pageSize, page * pageSize - 1);
 
-  let { data, error } = await builder;
-  if (error && isMissingEnrollmentDiscountColumn(error.message)) {
-    // DB migration 전 하위 호환: 할인 컬럼 없이 재조회
-    let fallbackBuilder = supabaseServer.from("students").select(`
-      *,
-      enrollments(
-        id,
-        class_id,
-        monthly_fee,
-        classes(id, name, teacher_name, class_type, monthly_fee, monthly_sessions)
-      ),
-      payments(id, month_key, amount_due, amount_paid, status, paid_at, payment_method, notes, status_changed_at)
-    `);
-
+  const runListQuery = (selectBody: string) => {
+    let builder = supabaseServer.from("students").select(selectBody);
     if (query) {
-      fallbackBuilder = fallbackBuilder.or(
+      builder = builder.or(
         `name.ilike.%${query}%,phone.ilike.%${query}%,parent_phone.ilike.%${query}%,father_phone.ilike.%${query}%,mother_phone.ilike.%${query}%`
       );
     }
     if (status) {
       const mappedStatus = status === "break" ? "paused" : status;
-      fallbackBuilder = fallbackBuilder.eq("status", mappedStatus);
+      builder = builder.eq("status", mappedStatus);
     }
     if (grade) {
-      fallbackBuilder = fallbackBuilder.eq("grade", grade);
+      builder = builder.eq("grade", grade);
     }
     if (classId) {
-      fallbackBuilder = fallbackBuilder.eq("enrollments.class_id", classId);
+      builder = builder.eq("enrollments.class_id", classId);
     }
     if (month) {
-      fallbackBuilder = fallbackBuilder.eq("payments.month_key", month);
+      builder = builder.eq("payments.month_key", month);
     }
-    fallbackBuilder = fallbackBuilder
-      .order(column, { ascending: direction !== "desc" })
-      .range((page - 1) * pageSize, page * pageSize - 1);
+    return builder.order(column, { ascending: direction !== "desc" }).range((page - 1) * pageSize, page * pageSize - 1);
+  };
 
-    const fallbackRes = await fallbackBuilder;
-    data = fallbackRes.data;
-    error = fallbackRes.error;
+  let { data, error } = await runListQuery(SELECT_STUDENTS_FULL);
+  const err0 = supabaseErrorText(error);
+  if (error && isMissingEnrollmentDiscountColumn(err0)) {
+    const res = await runListQuery(SELECT_STUDENTS_LEGACY_ENROLLMENT);
+    data = res.data;
+    error = res.error;
+  }
+  const err1 = supabaseErrorText(error);
+  if (error && isMissingPaymentsEmbedColumn(err1)) {
+    const res = await runListQuery(SELECT_STUDENTS_LEGACY_ENROLLMENT_PAYMENTS);
+    data = res.data;
+    error = res.error;
   }
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: supabaseErrorText(error) || "회원 목록 조회 실패" }, { status: 500 });
   }
 
-  const items = (data ?? []).map((student) => {
+  type StudentListRow = {
+    enrollments?: {
+      monthly_fee?: number;
+      discount_type?: string;
+      discount_value?: number;
+      final_fee?: number;
+      classes?: { id?: string; name?: string; monthly_fee?: number };
+    }[];
+    payments?: { month_key: string; status: string }[];
+    status?: string;
+  };
+  const rows = (data ?? []) as StudentListRow[];
+  const items = rows.map((student) => {
     const firstEnrollment = student.enrollments?.[0];
     if (firstEnrollment) {
       const baseFee = Number(firstEnrollment.monthly_fee ?? firstEnrollment.classes?.monthly_fee ?? 0);
       const finalFee = calculateFinalFee(
         baseFee,
-        firstEnrollment.discount_type ?? "none",
+        (firstEnrollment.discount_type ?? "none") as DiscountType,
         Number(firstEnrollment.discount_value ?? 0)
       );
       if (!firstEnrollment.final_fee || Number(firstEnrollment.final_fee) !== finalFee) {
@@ -138,7 +151,7 @@ export async function GET(request: Request) {
       if (!enrollment.classes?.id) continue;
       const current = classStats.get(enrollment.classes.id) ?? {
         classId: enrollment.classes.id,
-        className: enrollment.classes.name,
+        className: enrollment.classes.name ?? "",
         count: 0,
       };
       current.count += 1;
@@ -209,7 +222,7 @@ export async function POST(request: Request) {
       },
       { onConflict: "student_id,class_id" }
     );
-    if (upsertRes.error && isMissingEnrollmentDiscountColumn(upsertRes.error.message)) {
+    if (upsertRes.error && isMissingEnrollmentDiscountColumn(supabaseErrorText(upsertRes.error))) {
       await supabaseServer.from("enrollments").upsert(
         {
           student_id: data.id,

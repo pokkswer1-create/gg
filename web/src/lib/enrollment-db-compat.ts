@@ -1,6 +1,29 @@
+/** Concatenate PostgREST / Postgres fields — `details` often holds the real column error. */
+export function supabaseErrorText(err: {
+  message?: string;
+  details?: string;
+  hint?: string;
+  code?: string;
+} | null | undefined): string {
+  if (!err) return "";
+  return [err.message, err.details, err.hint, err.code].filter(Boolean).join(" | ");
+}
+
 /** Postgres/PostgREST errors when enrollments discount columns are not migrated yet */
-export function isMissingEnrollmentDiscountColumn(message: string) {
-  const m = message.toLowerCase();
+export function isMissingEnrollmentDiscountColumn(text: string) {
+  const m = text.toLowerCase();
+  if (!m) return false;
+  const mentionsEnrollment = m.includes("enrollments") || m.includes("enrollment");
+  const mentionsDiscountCols =
+    m.includes("discount_type") ||
+    m.includes("discount_value") ||
+    m.includes("discount_reason") ||
+    m.includes("discount_start") ||
+    m.includes("discount_end") ||
+    m.includes("final_fee");
+  if (m.includes("does not exist") && mentionsEnrollment && mentionsDiscountCols) {
+    return true;
+  }
   return (
     m.includes("enrollments_1.discount_type") ||
     m.includes("enrollments.discount_type") ||
@@ -15,4 +38,18 @@ export function isMissingEnrollmentDiscountColumn(message: string) {
     m.includes("enrollments_1.final_fee") ||
     m.includes("enrollments.final_fee")
   );
+}
+
+/** Older DBs may lack payment_method / notes / status_changed_at on payments */
+export function isMissingPaymentsEmbedColumn(text: string) {
+  const m = text.toLowerCase();
+  if (!m) return false;
+  const mentionsPayments = m.includes("payments");
+  const mentionsCols =
+    m.includes("payment_method") ||
+    m.includes("status_changed_at") ||
+    m.includes("updated_by") ||
+    m.includes("payments_1.notes") ||
+    m.includes("payments.notes");
+  return m.includes("does not exist") && mentionsPayments && mentionsCols;
 }
