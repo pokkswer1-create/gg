@@ -31,6 +31,9 @@ type Summary = {
 
 type BulkAction = "change_class" | "change_status" | "apply_discount" | "set_payment_status" | "change_fee";
 
+/** 결제 링크 발송 시 사용할 번호 */
+type PaymentLinkPhoneField = "phone" | "father_phone" | "mother_phone";
+
 const emptySummary: Summary = {
   totalMembers: 0,
   waitingMembers: 0,
@@ -76,6 +79,8 @@ export default function StudentsPage() {
   const [announcements, setAnnouncements] = useState<{ id: string; title: string }[]>([]);
   const [announcementId, setAnnouncementId] = useState("");
   const [smsText, setSmsText] = useState("");
+  const [paymentLinkPhoneField, setPaymentLinkPhoneField] =
+    useState<PaymentLinkPhoneField>("father_phone");
 
   const [editingStudent, setEditingStudent] = useState<StudentWithMeta | null>(null);
   const [editStatus, setEditStatus] = useState<Student["status"]>("active");
@@ -247,6 +252,7 @@ export default function StudentsPage() {
         memberIds: checkedIds,
         month: activeMonth,
         channel: "kakao",
+        phoneField: paymentLinkPhoneField,
       }),
     });
     const json = (await res.json().catch(() => ({}))) as { sent?: number; failed?: number; error?: string };
@@ -608,7 +614,7 @@ export default function StudentsPage() {
         <div className="md:col-span-2">
           <h2 className="text-sm font-semibold">회원 일괄 등록/다운로드</h2>
           <p className="mt-1 text-xs opacity-75">
-            템플릿은 회원 목록과 같은 한글 열 이름(이름·소속 반·연락처·기본 수강료 등)을 사용합니다. 연락처가 비어 있으면 부·모·학부모 번호로 채워집니다.
+            템플릿은 회원 목록과 같은 한글 열 이름(이름·소속 반·연락처·기본 수강료 등)을 사용합니다. 연락처가 비어 있으면 부·모 번호로 채워집니다.
           </p>
         </div>
         <label className="flex cursor-pointer items-center justify-center rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700">
@@ -881,7 +887,7 @@ export default function StudentsPage() {
               </Th>
               <Th>이름</Th>
               <Th>소속 반</Th>
-              <Th>연락처</Th>
+              <Th className="min-w-[200px]">본인·부·모 연락처</Th>
               <Th>학년</Th>
               <Th>기본 수강료</Th>
               <Th>할인</Th>
@@ -923,7 +929,7 @@ export default function StudentsPage() {
                     </div>
                   </Td>
                   <Td>{enrollment?.classes?.name ?? "-"}</Td>
-                  <Td className="min-w-[220px]">
+                  <Td className="min-w-[200px]">
                     <ContactLines student={student} />
                   </Td>
                   <Td>{formatGradeDisplay(student.grade)}</Td>
@@ -1103,10 +1109,6 @@ function ContactLines({ student }: { student: Student }) {
         <span className="text-[11px] text-zinc-500 dark:text-zinc-400">모</span>{" "}
         <span className="tabular-nums">{contactText(student.mother_phone)}</span>
       </div>
-      <div>
-        <span className="text-[11px] text-zinc-500 dark:text-zinc-400">학부모</span>{" "}
-        <span className="tabular-nums">{contactText(student.parent_phone)}</span>
-      </div>
     </div>
   );
 }
@@ -1141,8 +1143,12 @@ function SummaryCard({ title, value, onClick }: { title: string; value: string; 
   );
 }
 
-function Th({ children }: { children: ReactNode }) {
-  return <th className="px-3 py-2 text-left font-medium">{children}</th>;
+function Th({ children, className }: { children: ReactNode; className?: string }) {
+  return (
+    <th className={className ? `px-3 py-2 text-left font-medium ${className}` : "px-3 py-2 text-left font-medium"}>
+      {children}
+    </th>
+  );
 }
 
 function Td({ children, className }: { children: ReactNode; className?: string }) {

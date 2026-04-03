@@ -102,7 +102,6 @@ export default function StudentDetailPage({
           <li>본인: {student.phone || "—"}</li>
           <li>부: {student.father_phone || "—"}</li>
           <li>모: {student.mother_phone || "—"}</li>
-          <li>학부모(공통): {student.parent_phone || "—"}</li>
         </ul>
         <p className="mt-2">학부모 이름: {student.parent_name ?? "—"}</p>
         <p>상태: {student.status}</p>
