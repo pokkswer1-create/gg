@@ -1,6 +1,7 @@
 "use client";
 
 import { authFetch } from "@/lib/auth-fetch";
+import { CLASS_FEE_TIERS, type ClassFeeTierId, FEE_TIER_IDS } from "@/lib/class-fee-tiers";
 import type { DiscountType, Student } from "@/lib/types";
 import { calculateFinalFee, formatWon } from "@/lib/tuition";
 import Link from "next/link";
@@ -81,6 +82,11 @@ export default function StudentsPage() {
   const [smsText, setSmsText] = useState("");
   const [paymentLinkPhoneField, setPaymentLinkPhoneField] =
     useState<PaymentLinkPhoneField>("father_phone");
+
+  const [quickClassName, setQuickClassName] = useState("");
+  const [quickTeacher, setQuickTeacher] = useState("");
+  const [quickFeeTier, setQuickFeeTier] = useState<ClassFeeTierId>("weekly_2");
+  const [quickClassSaving, setQuickClassSaving] = useState(false);
 
   const [editingStudent, setEditingStudent] = useState<StudentWithMeta | null>(null);
   const [editStatus, setEditStatus] = useState<Student["status"]>("active");
@@ -429,6 +435,42 @@ export default function StudentsPage() {
     await loadStudents();
   };
 
+  const createQuickClass = async (event: FormEvent) => {
+    event.preventDefault();
+    const name = quickClassName.trim();
+    const teacher = quickTeacher.trim();
+    if (!name || !teacher) {
+      setError("반 이름과 강사명을 입력해 주세요.");
+      return;
+    }
+    setError("");
+    setQuickClassSaving(true);
+    const res = await authFetch("/api/classes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name,
+        teacher_name: teacher,
+        class_type: "regular",
+        fee_tier: quickFeeTier,
+        days_of_week: ["mon", "wed", "fri"],
+        start_time: "16:00",
+        end_time: "17:00",
+        capacity: 20,
+      }),
+    });
+    const json = (await res.json().catch(() => ({}))) as { error?: string };
+    setQuickClassSaving(false);
+    if (!res.ok) {
+      setError(json.error ?? "반 만들기 실패");
+      return;
+    }
+    setQuickClassName("");
+    setQuickTeacher("");
+    setMessage(`반「${name}」을(를) 만들었습니다.`);
+    await loadClasses();
+  };
+
   const applyBulkAction = async () => {
     if (checkedIds.length === 0) {
       setError("일괄 작업할 회원을 선택해 주세요.");
@@ -727,6 +769,51 @@ export default function StudentsPage() {
         <input className="rounded border border-zinc-300 bg-transparent px-3 py-2 dark:border-zinc-700" placeholder="학년" value={createForm.grade} onChange={(e) => setCreateForm((prev) => ({ ...prev, grade: e.target.value }))} required />
         <input type="date" className="rounded border border-zinc-300 bg-transparent px-3 py-2 dark:border-zinc-700" value={createForm.join_date} onChange={(e) => setCreateForm((prev) => ({ ...prev, join_date: e.target.value }))} />
         <button type="submit" className="rounded bg-zinc-900 px-3 py-2 text-white dark:bg-zinc-100 dark:text-zinc-900">회원 추가</button>
+      </form>
+
+      <form
+        className="grid gap-3 rounded-xl border border-dashed border-zinc-400 p-4 dark:border-zinc-600 md:grid-cols-6"
+        onSubmit={createQuickClass}
+      >
+        <div className="md:col-span-6 text-sm font-semibold">반 빠르게 만들기</div>
+        <p className="md:col-span-6 -mt-1 text-xs opacity-75">
+          월 수강료는 직접 입력하지 않습니다. 주1회·주2회·주3회·대표팀·트라이아웃 중 선택하면 금액·월 수업 횟수가 정해집니다. 기본 일정은 월·수·금 16:00~17:00(정원 20명)이며,{" "}
+          <Link className="underline" href="/classes">
+            수업 관리
+          </Link>
+          에서 바꿀 수 있습니다.
+        </p>
+        <input
+          className="rounded border border-zinc-300 bg-transparent px-3 py-2 dark:border-zinc-700"
+          placeholder="반 이름"
+          value={quickClassName}
+          onChange={(e) => setQuickClassName(e.target.value)}
+        />
+        <input
+          className="rounded border border-zinc-300 bg-transparent px-3 py-2 dark:border-zinc-700"
+          placeholder="강사명"
+          value={quickTeacher}
+          onChange={(e) => setQuickTeacher(e.target.value)}
+        />
+        <select
+          className="rounded border border-zinc-300 bg-transparent px-3 py-2 md:col-span-2 dark:border-zinc-700"
+          value={quickFeeTier}
+          onChange={(e) => setQuickFeeTier(e.target.value as ClassFeeTierId)}
+        >
+          {FEE_TIER_IDS.map((id) => (
+            <option key={id} value={id}>
+              {CLASS_FEE_TIERS[id].label} · {CLASS_FEE_TIERS[id].monthly_fee.toLocaleString("ko-KR")}원 · 월{" "}
+              {CLASS_FEE_TIERS[id].monthly_sessions}회
+            </option>
+          ))}
+        </select>
+        <button
+          type="submit"
+          disabled={quickClassSaving}
+          className="rounded bg-zinc-900 px-3 py-2 text-white disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900"
+        >
+          {quickClassSaving ? "만드는 중…" : "반 만들기"}
+        </button>
       </form>
 
       <section className="grid gap-3 rounded-xl border p-4 dark:border-zinc-800 md:grid-cols-6">

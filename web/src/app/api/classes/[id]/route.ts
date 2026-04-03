@@ -1,4 +1,9 @@
 import { requireRole } from "@/lib/auth/guards";
+import {
+  getFeesForTier,
+  isClassFeeTierId,
+  type ClassFeeTierId,
+} from "@/lib/class-fee-tiers";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
@@ -12,16 +17,35 @@ export async function PATCH(request: Request, context: Context) {
 
   const { id } = await context.params;
   const body = await request.json();
-  const monthlySessions = Number(body.monthly_sessions ?? 0);
-  const feeMode = body.fee_mode ?? "monthly_fixed";
-  const feePerSession = Number(body.fee_per_session ?? 0);
-  const monthlyFee =
-    feeMode === "per_session"
-      ? feePerSession * monthlySessions
-      : Number(body.monthly_fee ?? 0);
+  const feeTierRaw = body.fee_tier as string | undefined;
+
+  let monthlySessions: number;
+  let feeMode = (body.fee_mode ?? "monthly_fixed") as "monthly_fixed" | "per_session";
+  let feePerSession = Number(body.fee_per_session ?? 0);
+  let monthlyFee: number;
+  let classCategory: "general" | "elite" | "tryout";
+
+  if (feeTierRaw && isClassFeeTierId(feeTierRaw)) {
+    const t = getFeesForTier(feeTierRaw as ClassFeeTierId);
+    monthlyFee = t.monthly_fee;
+    monthlySessions = t.monthly_sessions;
+    classCategory = t.class_category;
+    feeMode = "monthly_fixed";
+    feePerSession = 0;
+  } else {
+    monthlySessions = Number(body.monthly_sessions ?? 0);
+    monthlyFee =
+      feeMode === "per_session"
+        ? feePerSession * monthlySessions
+        : Number(body.monthly_fee ?? 0);
+    classCategory = (body.class_category ?? "general") as "general" | "elite" | "tryout";
+  }
 
   if (monthlyFee <= 0) {
-    return NextResponse.json({ error: "수강료는 0원보다 커야 합니다." }, { status: 400 });
+    return NextResponse.json(
+      { error: "요금 구간(fee_tier)을 선택하거나 유효한 수강료가 필요합니다." },
+      { status: 400 }
+    );
   }
 
   const supabaseServer = getSupabaseServer();
@@ -29,7 +53,7 @@ export async function PATCH(request: Request, context: Context) {
     name: body.name,
     teacher_name: body.teacher_name,
     class_type: body.class_type,
-    class_category: body.class_category ?? "general",
+    class_category: classCategory,
     days_of_week: body.days_of_week ?? [],
     start_time: body.start_time,
     end_time: body.end_time,

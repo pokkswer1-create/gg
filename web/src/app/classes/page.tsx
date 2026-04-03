@@ -1,8 +1,15 @@
 "use client";
 
+import {
+  CLASS_FEE_TIERS,
+  type ClassFeeTierId,
+  FEE_TIER_IDS,
+  matchTierForClass,
+  tierSummaryLabel,
+} from "@/lib/class-fee-tiers";
 import type { AcademyClass, Student } from "@/lib/types";
 import { authFetch } from "@/lib/auth-fetch";
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 type ClassWithEnrollments = AcademyClass & {
   enrollments: {
@@ -19,8 +26,7 @@ type ClassForm = {
   days_of_week: string[];
   start_time: string;
   end_time: string;
-  monthly_fee: number;
-  monthly_sessions: number;
+  fee_tier: ClassFeeTierId;
   capacity: number;
 };
 
@@ -34,26 +40,24 @@ const dayOptions = [
   { value: "sun", label: "일" },
 ];
 
-const initialForm: ClassForm = {
+const initialEditForm = (): ClassForm => ({
   name: "",
   teacher_name: "",
   class_type: "regular",
   days_of_week: ["mon", "wed", "fri"],
   start_time: "14:00",
   end_time: "15:00",
-  monthly_fee: 0,
-  monthly_sessions: 8,
+  fee_tier: "weekly_2",
   capacity: 10,
-};
+});
 
 export default function ClassesPage() {
   const [classes, setClasses] = useState<ClassWithEnrollments[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
-  const [form, setForm] = useState<ClassForm>(initialForm);
   const [selectedClass, setSelectedClass] = useState("");
   const [selectedStudent, setSelectedStudent] = useState("");
   const [editingClassId, setEditingClassId] = useState("");
-  const [editForm, setEditForm] = useState<ClassForm>(initialForm);
+  const [editForm, setEditForm] = useState<ClassForm>(initialEditForm);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
@@ -77,28 +81,6 @@ export default function ClassesPage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadData();
   }, []);
-
-  const createClass = async (event: FormEvent) => {
-    event.preventDefault();
-    setError("");
-    setMessage("");
-    const res = await authFetch("/api/classes", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ...form,
-        days_of_week: form.days_of_week,
-      }),
-    });
-    const json = await res.json();
-    if (!res.ok) {
-      setError(json.error ?? "Failed to create class.");
-      return;
-    }
-    setForm(initialForm);
-    setClasses((prev) => [{ ...json.data, enrollments: [] }, ...prev]);
-    setMessage("수업이 추가되었습니다. (매월 지속 운영)");
-  };
 
   const enrollStudent = async () => {
     if (!selectedClass || !selectedStudent) return;
@@ -157,6 +139,12 @@ export default function ClassesPage() {
 
   const startEdit = (klass: ClassWithEnrollments) => {
     setEditingClassId(klass.id);
+    const matched =
+      matchTierForClass({
+        monthly_fee: Number(klass.monthly_fee ?? 0),
+        monthly_sessions: Number(klass.monthly_sessions ?? 0),
+        class_category: klass.class_category ?? "general",
+      }) ?? "weekly_2";
     setEditForm({
       name: klass.name,
       teacher_name: klass.teacher_name,
@@ -164,8 +152,7 @@ export default function ClassesPage() {
       days_of_week: klass.days_of_week ?? [],
       start_time: klass.start_time?.slice(0, 5) ?? "14:00",
       end_time: klass.end_time?.slice(0, 5) ?? "15:00",
-      monthly_fee: Number(klass.monthly_fee ?? 0),
-      monthly_sessions: Number(klass.monthly_sessions ?? 0),
+      fee_tier: matched,
       capacity: Number(klass.capacity ?? 0),
     });
   };
@@ -177,7 +164,10 @@ export default function ClassesPage() {
     const res = await authFetch(`/api/classes/${editingClassId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(editForm),
+      body: JSON.stringify({
+        ...editForm,
+        fee_tier: editForm.fee_tier,
+      }),
     });
     const json = await res.json();
     if (!res.ok) {
@@ -238,20 +228,7 @@ export default function ClassesPage() {
     );
   };
 
-  const toggleDay = (
-    target: "create" | "edit",
-    day: string,
-    checked: boolean
-  ) => {
-    if (target === "create") {
-      setForm((prev) => ({
-        ...prev,
-        days_of_week: checked
-          ? [...prev.days_of_week, day]
-          : prev.days_of_week.filter((value) => value !== day),
-      }));
-      return;
-    }
+  const toggleDay = (day: string, checked: boolean) => {
     setEditForm((prev) => ({
       ...prev,
       days_of_week: checked
@@ -264,99 +241,12 @@ export default function ClassesPage() {
     <main className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-8">
       <h1 className="text-2xl font-semibold">수업 관리</h1>
       <p className="rounded-xl border border-zinc-200 px-4 py-3 text-sm text-zinc-700 dark:border-zinc-800 dark:text-zinc-300">
-        등록된 수업은 매월 자동으로 이어지는 정기 수업입니다. 별도로 수정/삭제하지 않으면 계속 유지됩니다.
+        등록된 수업은 매월 자동으로 이어지는 정기 수업입니다. <strong>새 반(수업) 추가</strong>는{" "}
+        <strong>회원 관리</strong> 화면에서 이름·강사·요금 구간만으로 만들 수 있습니다. 여기서는 수강 등록·수정·종료를
+        다룹니다.
       </p>
       {error ? <p className="text-rose-500">{error}</p> : null}
       {message ? <p className="text-emerald-600">{message}</p> : null}
-
-      <form className="grid gap-3 rounded-xl border p-4 dark:border-zinc-800 md:grid-cols-4" onSubmit={createClass}>
-        <input
-          className="rounded border border-zinc-300 bg-transparent px-3 py-2 dark:border-zinc-700"
-          placeholder="수업명"
-          value={form.name}
-          onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
-          required
-        />
-        <input
-          className="rounded border border-zinc-300 bg-transparent px-3 py-2 dark:border-zinc-700"
-          placeholder="강사명"
-          value={form.teacher_name}
-          onChange={(e) => setForm((prev) => ({ ...prev, teacher_name: e.target.value }))}
-          required
-        />
-        <select
-          className="rounded border border-zinc-300 bg-transparent px-3 py-2 dark:border-zinc-700"
-          value={form.class_type}
-          onChange={(e) =>
-            setForm((prev) => ({ ...prev, class_type: e.target.value as ClassForm["class_type"] }))
-          }
-        >
-          <option value="regular">정규</option>
-          <option value="trial">체험</option>
-          <option value="oneday">원데이</option>
-        </select>
-        <div className="rounded border border-zinc-300 px-3 py-2 dark:border-zinc-700 md:col-span-1">
-          <p className="mb-1 text-xs opacity-70">요일 선택</p>
-          <div className="flex flex-wrap gap-2">
-            {dayOptions.map((day) => (
-              <label key={day.value} className="flex items-center gap-1 text-xs">
-                <input
-                  type="checkbox"
-                  checked={form.days_of_week.includes(day.value)}
-                  onChange={(e) => toggleDay("create", day.value, e.target.checked)}
-                />
-                {day.label}
-              </label>
-            ))}
-          </div>
-        </div>
-        <input
-          className="rounded border border-zinc-300 bg-transparent px-3 py-2 dark:border-zinc-700"
-          type="time"
-          value={form.start_time}
-          onChange={(e) => setForm((prev) => ({ ...prev, start_time: e.target.value }))}
-        />
-        <input
-          className="rounded border border-zinc-300 bg-transparent px-3 py-2 dark:border-zinc-700"
-          type="time"
-          value={form.end_time}
-          onChange={(e) => setForm((prev) => ({ ...prev, end_time: e.target.value }))}
-        />
-        <div className="rounded border border-zinc-300 px-3 py-2 dark:border-zinc-700">
-          <p className="mb-1 text-xs opacity-70">월 수강료</p>
-          <input
-            className="w-full bg-transparent"
-            type="number"
-            placeholder="예: 350000"
-            value={form.monthly_fee}
-            onChange={(e) => setForm((prev) => ({ ...prev, monthly_fee: Number(e.target.value) }))}
-          />
-        </div>
-        <div className="rounded border border-zinc-300 px-3 py-2 dark:border-zinc-700">
-          <p className="mb-1 text-xs opacity-70">월 수업 횟수</p>
-          <input
-            className="w-full bg-transparent"
-            type="number"
-            placeholder="예: 8"
-            value={form.monthly_sessions}
-            onChange={(e) => setForm((prev) => ({ ...prev, monthly_sessions: Number(e.target.value) }))}
-          />
-        </div>
-        <input
-          className="rounded border border-zinc-300 bg-transparent px-3 py-2 dark:border-zinc-700"
-          type="number"
-          min={0}
-          placeholder="정원"
-          value={form.capacity}
-          onChange={(e) => setForm((prev) => ({ ...prev, capacity: Number(e.target.value) }))}
-        />
-        <button
-          type="submit"
-          className="rounded bg-zinc-900 px-3 py-2 text-white dark:bg-zinc-100 dark:text-zinc-900 md:col-span-4"
-        >
-          수업 추가
-        </button>
-      </form>
 
       <section className="grid gap-3 rounded-xl border p-4 dark:border-zinc-800 md:grid-cols-3">
         <select
@@ -404,8 +294,7 @@ export default function ClassesPage() {
               <Th>시간</Th>
               <Th>정원</Th>
               <Th>현재인원</Th>
-              <Th>월수강료</Th>
-              <Th>월수업횟수</Th>
+              <Th>요금 구간</Th>
               <Th>수강생 관리</Th>
               <Th>작업</Th>
             </tr>
@@ -422,15 +311,6 @@ export default function ClassesPage() {
                     />
                   ) : (
                     klass.name
-                  )}
-                </Td>
-                <Td>
-                  {klass.class_status === "ended" ? (
-                    <span className="rounded bg-zinc-200 px-2 py-1 text-xs dark:bg-zinc-800">종료</span>
-                  ) : (
-                    <span className="rounded bg-emerald-100 px-2 py-1 text-xs text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
-                      운영중
-                    </span>
                   )}
                 </Td>
                 <Td>
@@ -465,6 +345,15 @@ export default function ClassesPage() {
                   )}
                 </Td>
                 <Td>
+                  {klass.class_status === "ended" ? (
+                    <span className="rounded bg-zinc-200 px-2 py-1 text-xs dark:bg-zinc-800">종료</span>
+                  ) : (
+                    <span className="rounded bg-emerald-100 px-2 py-1 text-xs text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
+                      운영중
+                    </span>
+                  )}
+                </Td>
+                <Td>
                   {editingClassId === klass.id ? (
                     <div className="flex min-w-32 flex-wrap gap-1">
                       {dayOptions.map((day) => (
@@ -472,7 +361,7 @@ export default function ClassesPage() {
                           <input
                             type="checkbox"
                             checked={editForm.days_of_week.includes(day.value)}
-                            onChange={(e) => toggleDay("edit", day.value, e.target.checked)}
+                            onChange={(e) => toggleDay(day.value, e.target.checked)}
                           />
                           {day.label}
                         </label>
@@ -519,30 +408,24 @@ export default function ClassesPage() {
                 <Td>
                   {klass.enrollments?.length ?? 0}/{klass.capacity}
                 </Td>
-                <Td>
+                <Td className="max-w-[220px]">
                   {editingClassId === klass.id ? (
-                    <input
-                      className="w-24 rounded border border-zinc-300 bg-transparent px-2 py-1 dark:border-zinc-700"
-                      type="number"
-                      min={0}
-                      value={editForm.monthly_fee}
-                      onChange={(e) => setEditForm((prev) => ({ ...prev, monthly_fee: Number(e.target.value) }))}
-                    />
+                    <select
+                      className="w-full rounded border border-zinc-300 bg-transparent px-2 py-1 text-xs dark:border-zinc-700"
+                      value={editForm.fee_tier}
+                      onChange={(e) =>
+                        setEditForm((prev) => ({ ...prev, fee_tier: e.target.value as ClassFeeTierId }))
+                      }
+                    >
+                      {FEE_TIER_IDS.map((id) => (
+                        <option key={id} value={id}>
+                          {CLASS_FEE_TIERS[id].label} · {CLASS_FEE_TIERS[id].monthly_fee.toLocaleString("ko-KR")}원 · 월{" "}
+                          {CLASS_FEE_TIERS[id].monthly_sessions}회
+                        </option>
+                      ))}
+                    </select>
                   ) : (
-                    `${klass.monthly_fee.toLocaleString("ko-KR")}원`
-                  )}
-                </Td>
-                <Td>
-                  {editingClassId === klass.id ? (
-                    <input
-                      className="w-20 rounded border border-zinc-300 bg-transparent px-2 py-1 dark:border-zinc-700"
-                      type="number"
-                      min={0}
-                      value={editForm.monthly_sessions}
-                      onChange={(e) => setEditForm((prev) => ({ ...prev, monthly_sessions: Number(e.target.value) }))}
-                    />
-                  ) : (
-                    `${klass.monthly_sessions}회`
+                    <span className="text-xs leading-snug">{tierSummaryLabel(klass)}</span>
                   )}
                 </Td>
                 <Td>
@@ -622,6 +505,6 @@ export default function ClassesPage() {
 function Th({ children }: { children: ReactNode }) {
   return <th className="px-3 py-2 text-left font-medium">{children}</th>;
 }
-function Td({ children }: { children: ReactNode }) {
-  return <td className="px-3 py-2">{children}</td>;
+function Td({ children, className }: { children: ReactNode; className?: string }) {
+  return <td className={className ? `px-3 py-2 ${className}` : "px-3 py-2"}>{children}</td>;
 }
