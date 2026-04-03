@@ -29,7 +29,7 @@ type Summary = {
   classStats: { classId: string; className: string; count: number }[];
 };
 
-type BulkAction = "change_class" | "change_status" | "apply_discount" | "set_payment_status";
+type BulkAction = "change_class" | "change_status" | "apply_discount" | "set_payment_status" | "change_fee";
 
 const emptySummary: Summary = {
   totalMembers: 0,
@@ -68,6 +68,7 @@ export default function StudentsPage() {
   const [bulkClassId, setBulkClassId] = useState("");
   const [bulkDiscountType, setBulkDiscountType] = useState<DiscountType>("amount");
   const [bulkDiscountValue, setBulkDiscountValue] = useState(0);
+  const [bulkBaseFee, setBulkBaseFee] = useState(0);
   const [bulkMonth, setBulkMonth] = useState(new Date().toISOString().slice(0, 7));
   const [bulkPaymentStatus, setBulkPaymentStatus] =
     useState<"paid" | "pending" | "unpaid" | "refunded">("paid");
@@ -438,6 +439,11 @@ export default function StudentsPage() {
       payload.month_key = bulkMonth;
       payload.payment_status = bulkPaymentStatus;
     }
+    if (bulkAction === "change_fee") {
+      payload.monthly_fee = bulkBaseFee;
+      payload.discount_type = bulkDiscountType;
+      payload.discount_value = bulkDiscountValue;
+    }
 
     const res = await authFetch("/api/students/bulk", {
       method: "PATCH",
@@ -747,6 +753,7 @@ export default function StudentsPage() {
           <option value="change_status">상태 일괄 변경</option>
           <option value="change_class">반 일괄 변경</option>
           <option value="apply_discount">할인 일괄 적용</option>
+          <option value="change_fee">기본 수강료 일괄 변경</option>
           <option value="set_payment_status">월 결제상태 일괄 처리</option>
         </select>
         {bulkAction === "change_status" ? (
@@ -789,6 +796,33 @@ export default function StudentsPage() {
               type="number"
               className="rounded border border-zinc-300 bg-transparent px-3 py-2 dark:border-zinc-700"
               placeholder="할인값"
+              value={bulkDiscountValue}
+              onChange={(e) => setBulkDiscountValue(Number(e.target.value))}
+            />
+          </>
+        ) : null}
+        {bulkAction === "change_fee" ? (
+          <>
+            <input
+              type="number"
+              className="rounded border border-zinc-300 bg-transparent px-3 py-2 dark:border-zinc-700"
+              placeholder="새 기본 수강료"
+              value={bulkBaseFee}
+              onChange={(e) => setBulkBaseFee(Number(e.target.value))}
+            />
+            <select
+              className="rounded border border-zinc-300 bg-transparent px-3 py-2 dark:border-zinc-700"
+              value={bulkDiscountType}
+              onChange={(e) => setBulkDiscountType(e.target.value as DiscountType)}
+            >
+              <option value="none">할인 없음</option>
+              <option value="amount">정액 할인</option>
+              <option value="percent">정률 할인</option>
+            </select>
+            <input
+              type="number"
+              className="rounded border border-zinc-300 bg-transparent px-3 py-2 dark:border-zinc-700"
+              placeholder="할인값(선택)"
               value={bulkDiscountValue}
               onChange={(e) => setBulkDiscountValue(Number(e.target.value))}
             />

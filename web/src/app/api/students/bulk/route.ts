@@ -9,7 +9,8 @@ type BulkAction =
   | "change_class"
   | "change_status"
   | "apply_discount"
-  | "set_payment_status";
+  | "set_payment_status"
+  | "change_fee";
 
 export async function PATCH(request: Request) {
   const guard = await requireRole(["admin"]);
@@ -25,6 +26,7 @@ export async function PATCH(request: Request) {
     discount_reason?: string | null;
     month_key?: string;
     payment_status?: "paid" | "pending" | "unpaid" | "refunded";
+    monthly_fee?: number;
     reason?: string;
   };
 
@@ -177,6 +179,60 @@ export async function PATCH(request: Request) {
           amount_paid: amountPaid,
           reason: body.reason ?? null,
         });
+      }
+
+      if (body.action === "change_fee" && typeof body.monthly_fee === "number") {
+        let enrollment = await supabaseServer
+          .from("enrollments")
+          .select("id, class_id, monthly_fee, discount_type, discount_value")
+          .eq("student_id", studentId)
+          .order("enrolled_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (enrollment.error && isMissingEnrollmentDiscountColumn(supabaseErrorText(enrollment.error))) {
+          enrollment = await supabaseServer
+            .from("enrollments")
+            .select("id, class_id, monthly_fee")
+            .eq("student_id", studentId)
+            .order("enrolled_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+        }
+        if (enrollment.error) throw new Error(enrollment.error.message);
+        if (!enrollment.data) throw new Error("수강 정보 없음");
+
+        const existing = enrollment.data as {
+          id: string;
+          class_id: string;
+          monthly_fee?: number;
+          discount_type?: DiscountType;
+          discount_value?: number;
+        };
+        const baseFee = Number(body.monthly_fee ?? 0);
+        const discountType = (body.discount_type ?? existing.discount_type ?? "none") as DiscountType;
+        const discountValue = Number(body.discount_value ?? existing.discount_value ?? 0);
+        const finalFee = calculateFinalFee(baseFee, discountType, discountValue);
+
+        const res = await supabaseServer
+          .from("enrollments")
+          .update({
+            monthly_fee: baseFee,
+            discount_type: discountType,
+            discount_value: discountValue,
+            final_fee: finalFee,
+          })
+          .eq("id", existing.id);
+        if (res.error && isMissingEnrollmentDiscountColumn(supabaseErrorText(res.error))) {
+          const legacyRes = await supabaseServer
+            .from("enrollments")
+            .update({
+              monthly_fee: baseFee,
+            })
+            .eq("id", existing.id);
+          if (legacyRes.error) throw new Error(legacyRes.error.message);
+        } else if (res.error) {
+          throw new Error(res.error.message);
+        }
       }
 
       await supabaseServer.from("member_change_logs").insert({
