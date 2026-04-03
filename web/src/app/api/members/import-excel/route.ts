@@ -1,5 +1,11 @@
 import { requireRole } from "@/lib/auth/guards";
+import {
+  isMissingEnrollmentDiscountColumn,
+  supabaseErrorText,
+} from "@/lib/enrollment-db-compat";
 import { getSupabaseServer } from "@/lib/supabase/server";
+import { calculateFinalFee } from "@/lib/tuition";
+import type { DiscountType } from "@/lib/types";
 import * as XLSX from "xlsx";
 import { NextResponse } from "next/server";
 
@@ -27,6 +33,17 @@ function pick(row: InputRow, keys: string[]): string {
     if (value) return value;
   }
   return "";
+}
+
+/** 엑셀에서 자리 채우기용 ".", "-", "없음" 등은 비어 있는 것으로 취급 */
+function normalizeCell(raw: string): string {
+  const t = raw.trim();
+  if (!t) return "";
+  const lower = t.toLowerCase();
+  if (t === "." || t === "．" || t === "-" || t === "—" || t === "–" || lower === "n/a" || lower === "없음") {
+    return "";
+  }
+  return t;
 }
 
 function normalizeIsoDate(input: string): { ok: true; value: string } | { ok: false; reason: string } {
@@ -75,29 +92,57 @@ export async function POST(request: Request) {
   for (let idx = 0; idx < rows.length; idx += 1) {
     const row = rows[idx];
 
-    const studentName = pick(row, ["studentName", "name", "학생명", "이름"]);
-    const phone = pick(row, ["phone", "studentPhone", "휴대폰", "연락처"]);
-    const grade = pick(row, ["grade", "학년"]);
-    const joinDate = pick(row, ["startDate", "joinDate", "join_date", "가입일", "시작일"]);
-    const statusRaw = pick(row, ["status", "상태"]).toLowerCase();
-    const monthlyFeeRaw = row.monthlyFee ?? row.monthly_fee ?? row["월수강료"] ?? row["월료"];
-    const parentName = pick(row, ["parentName", "parent_name", "학부모이름", "학부모 이름"]);
-    const parentPhone = pick(row, ["parentPhone", "parent_phone", "학부모연락처", "학부모 연락처"]);
-    const fatherPhone = pick(row, ["fatherPhone", "father_phone", "부연락처", "아버지연락처"]);
-    const motherPhone = pick(row, ["motherPhone", "mother_phone", "모연락처", "어머니연락처"]);
-    const classIdRaw = pick(row, ["classId", "class_id"]);
-    const className = pick(row, ["className", "class", "반이름", "반 이름"]);
+    const studentName = normalizeCell(pick(row, ["studentName", "name", "학생명", "이름"]));
+    const fatherPhoneRaw = normalizeCell(
+      pick(row, ["fatherPhone", "father_phone", "부연락처", "아버지연락처", "부 연락처"])
+    );
+    const motherPhoneRaw = normalizeCell(
+      pick(row, ["motherPhone", "mother_phone", "모연락처", "어머니연락처", "모 연락처"])
+    );
+    const parentPhoneRaw = normalizeCell(
+      pick(row, ["parentPhone", "parent_phone", "학부모연락처", "학부모 연락처"])
+    );
+    const phoneDirect = normalizeCell(pick(row, ["phone", "studentPhone", "휴대폰", "연락처", "핸드폰"]));
+    let phone = phoneDirect || fatherPhoneRaw || motherPhoneRaw || parentPhoneRaw;
+
+    const gradeRaw = normalizeCell(pick(row, ["grade", "학년", "학년/학부"]));
+    const grade = gradeRaw || "성인";
+
+    const joinDate = normalizeCell(pick(row, ["startDate", "joinDate", "join_date", "가입일", "시작일"]));
+    const statusRaw = normalizeCell(pick(row, ["status", "상태"])).toLowerCase();
+    const monthlyFeeRaw =
+      row.monthlyFee ??
+      row.monthly_fee ??
+      row["월수강료"] ??
+      row["월료"] ??
+      row["기본 수강료"] ??
+      row["기본수강료"];
+    const parentName = normalizeCell(pick(row, ["parentName", "parent_name", "학부모이름", "학부모 이름"]));
+    const parentPhone = parentPhoneRaw;
+    const fatherPhone = fatherPhoneRaw;
+    const motherPhone = motherPhoneRaw;
+    const classIdRaw = normalizeCell(pick(row, ["classId", "class_id"]));
+    const className = normalizeCell(
+      pick(row, ["className", "class", "반이름", "반 이름", "소속 반", "소속반"])
+    );
+
+    const discountTypeRaw = normalizeCell(
+      pick(row, ["discount_type", "discountType", "할인유형", "할인 유형"])
+    ).toLowerCase();
+    const discountValueRaw =
+      row.discount_value ?? row.discountValue ?? row["할인값"] ?? row["할인 값"] ?? row["할인금액"];
+    const finalFeeRaw = row.final_fee ?? row.finalFee ?? row["최종 수강료"] ?? row["최종수강료"];
 
     // 템플릿에 남아있는 빈 줄/서식 줄은 오류로 보지 않고 건너뜀
     const isEffectivelyEmpty =
       !studentName &&
-      !phone &&
-      !grade &&
+      !phoneDirect &&
+      !fatherPhoneRaw &&
+      !motherPhoneRaw &&
+      !parentPhoneRaw &&
+      !gradeRaw &&
       !joinDate &&
       !parentName &&
-      !parentPhone &&
-      !fatherPhone &&
-      !motherPhone &&
       !classIdRaw &&
       !className &&
       toNumber(monthlyFeeRaw) === 0;
@@ -105,10 +150,34 @@ export async function POST(request: Request) {
       continue;
     }
 
-    if (!studentName || !phone || !grade) {
-      errors.push({ row: idx + 2, reason: "필수 컬럼 누락(name/phone/grade)" });
+    if (!studentName || !phone) {
+      errors.push({
+        row: idx + 2,
+        reason: "필수 컬럼 누락(이름/연락처 — 연락처·부·모·학부모 중 하나 필요)",
+      });
       continue;
     }
+
+    let discountType: DiscountType = "none";
+    if (
+      discountTypeRaw.includes("amount") ||
+      discountTypeRaw.includes("금액") ||
+      discountTypeRaw === "원"
+    ) {
+      discountType = "amount";
+    } else if (
+      discountTypeRaw.includes("percent") ||
+      discountTypeRaw.includes("%") ||
+      discountTypeRaw.includes("퍼센트") ||
+      discountTypeRaw.includes("할인율")
+    ) {
+      discountType = "percent";
+    }
+    const discountValue = toNumber(discountValueRaw);
+    const baseFee = toNumber(monthlyFeeRaw);
+    const finalFeeFromSheet = toNumber(finalFeeRaw);
+    const computedFinal =
+      finalFeeFromSheet > 0 ? finalFeeFromSheet : calculateFinalFee(baseFee, discountType, discountValue);
 
     const mappedStatus =
       statusRaw === "break" || statusRaw === "paused" || statusRaw === "휴원"
@@ -151,14 +220,30 @@ export async function POST(request: Request) {
     const classId =
       classIdRaw || (className ? (classMap.get(className.toLowerCase()) ?? "") : "");
     if (classId) {
-      await supabaseServer.from("enrollments").upsert(
-        {
-          student_id: student.id,
-          class_id: classId,
-          monthly_fee: toNumber(monthlyFeeRaw),
-        },
-        { onConflict: "student_id,class_id" }
-      );
+      const fullEnrollment = {
+        student_id: student.id,
+        class_id: classId,
+        monthly_fee: baseFee,
+        discount_type: discountType,
+        discount_value: discountValue,
+        final_fee: computedFinal,
+      };
+      let enr = await supabaseServer.from("enrollments").upsert(fullEnrollment, {
+        onConflict: "student_id,class_id",
+      });
+      if (enr.error && isMissingEnrollmentDiscountColumn(supabaseErrorText(enr.error))) {
+        enr = await supabaseServer.from("enrollments").upsert(
+          {
+            student_id: student.id,
+            class_id: classId,
+            monthly_fee: baseFee,
+          },
+          { onConflict: "student_id,class_id" }
+        );
+      }
+      if (enr.error) {
+        errors.push({ row: idx + 2, reason: supabaseErrorText(enr.error) || "수강 등록 실패" });
+      }
     }
 
     imported += 1;

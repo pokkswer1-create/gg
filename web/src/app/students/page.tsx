@@ -602,7 +602,7 @@ export default function StudentsPage() {
         <div className="md:col-span-2">
           <h2 className="text-sm font-semibold">회원 일괄 등록/다운로드</h2>
           <p className="mt-1 text-xs opacity-75">
-            기존처럼 템플릿 기반 엑셀 일괄등록과 현재 조건 목록 다운로드를 사용할 수 있습니다.
+            템플릿은 회원 목록과 같은 한글 열 이름(이름·소속 반·연락처·기본 수강료 등)을 사용합니다. 연락처가 비어 있으면 부·모·학부모 번호로 채워집니다.
           </p>
         </div>
         <label className="flex cursor-pointer items-center justify-center rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700">
