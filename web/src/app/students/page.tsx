@@ -839,7 +839,7 @@ export default function StudentsPage() {
       </section>
 
       <div className="overflow-x-auto rounded-xl border dark:border-zinc-800">
-        <table className="min-w-[1600px] text-sm">
+        <table className="min-w-[1680px] text-sm">
           <thead className="bg-zinc-100 dark:bg-zinc-900/60">
             <tr>
               <Th>
@@ -848,6 +848,7 @@ export default function StudentsPage() {
               <Th>이름</Th>
               <Th>소속 반</Th>
               <Th>연락처</Th>
+              <Th>학년</Th>
               <Th>기본 수강료</Th>
               <Th>할인</Th>
               <Th>최종 수강료</Th>
@@ -888,11 +889,12 @@ export default function StudentsPage() {
                     </div>
                   </Td>
                   <Td>{enrollment?.classes?.name ?? "-"}</Td>
-                  <Td>{student.phone}</Td>
+                  <Td>{primaryContactDisplay(student)}</Td>
+                  <Td>{formatGradeDisplay(student.grade)}</Td>
                   <Td>{formatWon(baseFee)}</Td>
                   <Td>
                     {discountType === "none"
-                      ? "-"
+                      ? "없음"
                       : discountType === "amount"
                         ? `${discountValue.toLocaleString("ko-KR")}원`
                         : `${discountValue}%`}
@@ -908,7 +910,7 @@ export default function StudentsPage() {
                           <button
                             key={key}
                             type="button"
-                            title={`${idx + 1}월: ${payment?.status ?? "unpaid"}`}
+                            title={`${idx + 1}월: ${paymentStatusKo(payment?.status)}`}
                             onClick={() => void toggleMonthPayment(student, key)}
                             className={`h-5 w-5 rounded text-[10px] ${
                               isPaid
@@ -1036,6 +1038,43 @@ function statusLabel(status: Student["status"]) {
   if (status === "paused") return "휴원";
   if (status === "withdrawn") return "퇴원";
   return status;
+}
+
+function isPlaceholderContact(value: string | null | undefined) {
+  const t = (value ?? "").trim();
+  if (!t) return true;
+  if (t === "." || t === "．" || t === "-" || t === "—" || t === "–") return true;
+  return false;
+}
+
+/** 엑셀과 같이 학생 연락처가 비어 있으면 부·모·학부모 번호를 표시 */
+function primaryContactDisplay(student: Student) {
+  if (!isPlaceholderContact(student.phone)) return student.phone.trim();
+  if (!isPlaceholderContact(student.father_phone)) return student.father_phone!.trim();
+  if (!isPlaceholderContact(student.mother_phone)) return student.mother_phone!.trim();
+  if (!isPlaceholderContact(student.parent_phone)) return student.parent_phone!.trim();
+  return "—";
+}
+
+function formatGradeDisplay(grade: string) {
+  const t = (grade ?? "").trim();
+  if (!t || t === "." || t === "．") return "—";
+  return t;
+}
+
+function paymentStatusKo(status: string | undefined) {
+  switch (status) {
+    case "paid":
+      return "결제완료";
+    case "pending":
+      return "대기";
+    case "unpaid":
+      return "미납";
+    case "refunded":
+      return "환불";
+    default:
+      return "미납";
+  }
 }
 
 function SummaryCard({ title, value, onClick }: { title: string; value: string; onClick: () => void }) {
