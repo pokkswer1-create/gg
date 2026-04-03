@@ -50,8 +50,17 @@ export function isMissingPaymentsEmbedColumn(text: string) {
     m.includes("status_changed_at") ||
     m.includes("updated_by") ||
     m.includes("payments_1.notes") ||
-    m.includes("payments.notes");
-  return m.includes("does not exist") && mentionsPayments && mentionsCols;
+    m.includes("payments.notes") ||
+    m.includes("'notes'") ||
+    (m.includes("notes") && mentionsPayments);
+  const pgMissing = m.includes("does not exist") && mentionsPayments && mentionsCols;
+  // PostgREST often reports missing columns as schema cache errors, not "does not exist"
+  const schemaCacheMissing =
+    m.includes("could not find") &&
+    m.includes("schema cache") &&
+    mentionsPayments &&
+    (mentionsCols || m.includes("column of"));
+  return pgMissing || schemaCacheMissing;
 }
 
 /** Missing table errors on Supabase/PostgREST */
