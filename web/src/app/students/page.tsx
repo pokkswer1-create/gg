@@ -749,24 +749,73 @@ export default function StudentsPage() {
           <option value="apply_discount">할인 일괄 적용</option>
           <option value="set_payment_status">월 결제상태 일괄 처리</option>
         </select>
-        <select className="rounded border border-zinc-300 bg-transparent px-3 py-2 dark:border-zinc-700" value={bulkStatus} onChange={(e) => setBulkStatus(e.target.value as Student["status"])}>
-          <option value="active">재원중</option>
-          <option value="paused">휴원</option>
-          <option value="withdrawn">퇴원</option>
-        </select>
-        <select className="rounded border border-zinc-300 bg-transparent px-3 py-2 dark:border-zinc-700" value={bulkClassId} onChange={(e) => setBulkClassId(e.target.value)}>
-          <option value="">반 선택</option>
-          {classes.map((klass) => (
-            <option key={klass.id} value={klass.id}>{klass.name}</option>
-          ))}
-        </select>
-        <select className="rounded border border-zinc-300 bg-transparent px-3 py-2 dark:border-zinc-700" value={bulkDiscountType} onChange={(e) => setBulkDiscountType(e.target.value as DiscountType)}>
-          <option value="none">할인 없음</option>
-          <option value="amount">정액 할인</option>
-          <option value="percent">정률 할인</option>
-        </select>
-        <input type="number" className="rounded border border-zinc-300 bg-transparent px-3 py-2 dark:border-zinc-700" placeholder="할인값" value={bulkDiscountValue} onChange={(e) => setBulkDiscountValue(Number(e.target.value))} />
-        <input type="month" className="rounded border border-zinc-300 bg-transparent px-3 py-2 dark:border-zinc-700" value={bulkMonth} onChange={(e) => setBulkMonth(e.target.value)} />
+        {bulkAction === "change_status" ? (
+          <select
+            className="rounded border border-zinc-300 bg-transparent px-3 py-2 dark:border-zinc-700"
+            value={bulkStatus}
+            onChange={(e) => setBulkStatus(e.target.value as Student["status"])}
+          >
+            <option value="active">재원중</option>
+            <option value="paused">휴원</option>
+            <option value="withdrawn">퇴원</option>
+          </select>
+        ) : null}
+        {bulkAction === "change_class" ? (
+          <select
+            className="rounded border border-zinc-300 bg-transparent px-3 py-2 dark:border-zinc-700"
+            value={bulkClassId}
+            onChange={(e) => setBulkClassId(e.target.value)}
+          >
+            <option value="">반 선택</option>
+            {classes.map((klass) => (
+              <option key={klass.id} value={klass.id}>
+                {klass.name}
+              </option>
+            ))}
+          </select>
+        ) : null}
+        {bulkAction === "apply_discount" ? (
+          <>
+            <select
+              className="rounded border border-zinc-300 bg-transparent px-3 py-2 dark:border-zinc-700"
+              value={bulkDiscountType}
+              onChange={(e) => setBulkDiscountType(e.target.value as DiscountType)}
+            >
+              <option value="none">할인 없음</option>
+              <option value="amount">정액 할인</option>
+              <option value="percent">정률 할인</option>
+            </select>
+            <input
+              type="number"
+              className="rounded border border-zinc-300 bg-transparent px-3 py-2 dark:border-zinc-700"
+              placeholder="할인값"
+              value={bulkDiscountValue}
+              onChange={(e) => setBulkDiscountValue(Number(e.target.value))}
+            />
+          </>
+        ) : null}
+        {bulkAction === "set_payment_status" ? (
+          <>
+            <input
+              type="month"
+              className="rounded border border-zinc-300 bg-transparent px-3 py-2 dark:border-zinc-700"
+              value={bulkMonth}
+              onChange={(e) => setBulkMonth(e.target.value)}
+            />
+            <select
+              className="rounded border border-zinc-300 bg-transparent px-3 py-2 dark:border-zinc-700"
+              value={bulkPaymentStatus}
+              onChange={(e) =>
+                setBulkPaymentStatus(e.target.value as "paid" | "pending" | "unpaid" | "refunded")
+              }
+            >
+              <option value="paid">결제완료</option>
+              <option value="pending">진행중</option>
+              <option value="unpaid">미결제</option>
+              <option value="refunded">환불</option>
+            </select>
+          </>
+        ) : null}
         <button type="button" className="rounded bg-zinc-900 px-3 py-2 text-white dark:bg-zinc-100 dark:text-zinc-900" onClick={() => void applyBulkAction()}>
           선택 {checkedIds.length}명 일괄처리
         </button>
@@ -777,12 +826,6 @@ export default function StudentsPage() {
         >
           선택 회원 결제링크 발송
         </button>
-        <select className="rounded border border-zinc-300 bg-transparent px-3 py-2 dark:border-zinc-700 md:col-start-6" value={bulkPaymentStatus} onChange={(e) => setBulkPaymentStatus(e.target.value as "paid" | "pending" | "unpaid" | "refunded")}>
-          <option value="paid">결제완료</option>
-          <option value="pending">진행중</option>
-          <option value="unpaid">미결제</option>
-          <option value="refunded">환불</option>
-        </select>
       </section>
 
       <section className="flex flex-wrap gap-2">
