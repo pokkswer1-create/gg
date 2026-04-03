@@ -97,11 +97,14 @@ export default function StudentDetailPage({
 
       <section className="rounded-xl border p-4 dark:border-zinc-800">
         <p>학년: {student.grade}</p>
-        <p>연락처: {student.phone}</p>
-        <p>학부모: {student.parent_name ?? "-"}</p>
-        <p>학부모 연락처: {student.parent_phone ?? "-"}</p>
-        <p>부 연락처: {student.father_phone ?? "-"}</p>
-        <p>모 연락처: {student.mother_phone ?? "-"}</p>
+        <p className="mt-2 font-medium">연락처</p>
+        <ul className="mt-1 space-y-0.5 text-sm">
+          <li>본인: {student.phone || "—"}</li>
+          <li>부: {student.father_phone || "—"}</li>
+          <li>모: {student.mother_phone || "—"}</li>
+          <li>학부모(공통): {student.parent_phone || "—"}</li>
+        </ul>
+        <p className="mt-2">학부모 이름: {student.parent_name ?? "—"}</p>
         <p>상태: {student.status}</p>
         <p>출석률: {attendanceRate}%</p>
       </section>

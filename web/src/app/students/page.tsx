@@ -873,7 +873,7 @@ export default function StudentsPage() {
       </section>
 
       <div className="overflow-x-auto rounded-xl border dark:border-zinc-800">
-        <table className="min-w-[1680px] text-sm">
+        <table className="min-w-[1820px] text-sm">
           <thead className="bg-zinc-100 dark:bg-zinc-900/60">
             <tr>
               <Th>
@@ -923,7 +923,9 @@ export default function StudentsPage() {
                     </div>
                   </Td>
                   <Td>{enrollment?.classes?.name ?? "-"}</Td>
-                  <Td>{primaryContactDisplay(student)}</Td>
+                  <Td className="min-w-[220px]">
+                    <ContactLines student={student} />
+                  </Td>
                   <Td>{formatGradeDisplay(student.grade)}</Td>
                   <Td>{formatWon(baseFee)}</Td>
                   <Td>
@@ -1081,13 +1083,32 @@ function isPlaceholderContact(value: string | null | undefined) {
   return false;
 }
 
-/** 엑셀과 같이 학생 연락처가 비어 있으면 부·모·학부모 번호를 표시 */
-function primaryContactDisplay(student: Student) {
-  if (!isPlaceholderContact(student.phone)) return student.phone.trim();
-  if (!isPlaceholderContact(student.father_phone)) return student.father_phone!.trim();
-  if (!isPlaceholderContact(student.mother_phone)) return student.mother_phone!.trim();
-  if (!isPlaceholderContact(student.parent_phone)) return student.parent_phone!.trim();
-  return "—";
+function contactText(value: string | null | undefined) {
+  if (isPlaceholderContact(value)) return "—";
+  return (value ?? "").trim();
+}
+
+function ContactLines({ student }: { student: Student }) {
+  return (
+    <div className="flex flex-col gap-0.5 text-[12px] leading-snug">
+      <div>
+        <span className="text-[11px] text-zinc-500 dark:text-zinc-400">본인</span>{" "}
+        <span className="tabular-nums">{contactText(student.phone)}</span>
+      </div>
+      <div>
+        <span className="text-[11px] text-zinc-500 dark:text-zinc-400">부</span>{" "}
+        <span className="tabular-nums">{contactText(student.father_phone)}</span>
+      </div>
+      <div>
+        <span className="text-[11px] text-zinc-500 dark:text-zinc-400">모</span>{" "}
+        <span className="tabular-nums">{contactText(student.mother_phone)}</span>
+      </div>
+      <div>
+        <span className="text-[11px] text-zinc-500 dark:text-zinc-400">학부모</span>{" "}
+        <span className="tabular-nums">{contactText(student.parent_phone)}</span>
+      </div>
+    </div>
+  );
 }
 
 function formatGradeDisplay(grade: string) {
